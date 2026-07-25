@@ -1,0 +1,92 @@
+[
+  {
+    "id": "travel_multi_chunk",
+    "query": "international travel policy",
+    "expected_titles": [
+      "International Travel Approval Process",
+      "International Travel Daily Allowance",
+      "International Travel Insurance",
+      "International Travel Visa Support"
+    ]
+  },
+  {
+    "id": "travel_detailed",
+    "query": "international travel approval allowance insurance",
+    "expected_titles": [
+      "International Travel Approval Process",
+      "International Travel Daily Allowance",
+      "International Travel Insurance"
+    ]
+  },
+  {
+    "id": "remote_work_paraphrase",
+    "query": "work from home",
+    "expected_titles": ["Remote Work Policy"]
+  },
+  {
+    "id": "remote_work_security",
+    "query": "remote work approval VPN security",
+    "expected_titles": ["Remote Work Policy", "VPN Usage"]
+  },
+  {
+    "id": "negative_ceo_salary",
+    "query": "What is the CEO's salary?",
+    "expected_titles": []
+  },
+  {
+    "id": "cybersecurity_incident",
+    "query": "What are the cybersecurity incident reporting rules?",
+    "expected_titles": [
+      "IT Security and Password Policy",
+      "Security Incident Response Process"
+    ]
+  },
+  {
+    "id": "phishing_incident",
+    "query": "How do I report a phishing incident?",
+    "expected_titles": [
+      "IT Security and Password Policy",
+      "Security Incident Response Process"
+    ]
+  },
+  {
+    "id": "annual_leave_carryover",
+    "query": "How many annual leave days can I carry over?",
+    "expected_titles": ["Annual Leave"]
+  },
+  {
+    "id": "vacation_alias",
+    "query": "vacation days",
+    "expected_titles": ["Annual Leave"]
+  },
+  {
+    "id": "health_insurance",
+    "query": "health insurance benefits coverage",
+    "expected_titles": ["Health Benefits", "International Travel Insurance"]
+  },
+  {
+    "id": "probation_review",
+    "query": "How long is the probation period and when is the final review?",
+    "expected_titles": ["Probation Period"]
+  },
+  {
+    "id": "sick_leave_certificate",
+    "query": "When do I need a medical certificate for sick leave?",
+    "expected_titles": ["Sick Leave"]
+  },
+  {
+    "id": "expense_approval",
+    "query": "What is the expense claim approval threshold?",
+    "expected_titles": ["Expense Reimbursement"]
+  },
+  {
+    "id": "training_budget",
+    "query": "How much training budget do employees receive?",
+    "expected_titles": ["Training Budget"]
+  },
+  {
+    "id": "resignation_access",
+    "query": "How do I resign and when is access revoked?",
+    "expected_titles": ["Resignation Process"]
+  }
+]
