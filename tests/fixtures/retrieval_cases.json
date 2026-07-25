@@ -1,0 +1,248 @@
+[
+  {
+    "id": "travel_all",
+    "category": "existing_regression",
+    "query": "What is the policy on international travel?",
+    "expected_titles": [
+      "--- International Travel Approval Process ---",
+      "--- International Travel Daily Allowance ---",
+      "--- International Travel Insurance ---"
+    ],
+    "forbidden_titles": [
+      "--- PaySiam Gateway Product Overview ---"
+    ]
+  },
+  {
+    "id": "international_card_fee",
+    "category": "existing_regression",
+    "query": "What is the international card fee?",
+    "expected_titles": [
+      "--- PaySiam Gateway Product Overview ---"
+    ],
+    "forbidden_titles": [
+      "--- International Travel Approval Process ---",
+      "--- International Travel Daily Allowance ---",
+      "--- International Travel Insurance ---"
+    ]
+  },
+  {
+    "id": "travel_insurance_coverage",
+    "category": "existing_regression",
+    "query": "What is the international travel insurance coverage?",
+    "expected_titles": [
+      "--- International Travel Insurance ---"
+    ],
+    "forbidden_titles": [
+      "--- International Travel Approval Process ---",
+      "--- International Travel Daily Allowance ---"
+    ]
+  },
+  {
+    "id": "remote_general",
+    "category": "existing_regression",
+    "query": "Can I work remotely?",
+    "expected_titles": [
+      "--- Remote Work Policy ---",
+      "--- Hybrid Work Guidelines ---"
+    ],
+    "forbidden_titles": []
+  },
+  {
+    "id": "verbose_travel_summary",
+    "category": "existing_regression",
+    "query": "Summarize all international travel rules including approval, booking, allowance, lodging, insurance, and claims.",
+    "expected_titles": [
+      "--- International Travel Insurance ---",
+      "--- International Travel Daily Allowance ---",
+      "--- International Travel Approval Process ---"
+    ],
+    "forbidden_titles": [
+      "--- Expense Reimbursement ---",
+      "--- PaySiam Gateway Product Overview ---"
+    ]
+  },
+  {
+    "id": "p1_cross_section",
+    "category": "existing_regression",
+    "query": "How do I escalate a P1 outage?",
+    "expected_titles": [
+      "--- Support Escalation Process ---",
+      "--- Customer Support Service Levels ---"
+    ],
+    "forbidden_titles": []
+  },
+  {
+    "id": "international_card_focused",
+    "category": "existing_regression",
+    "query": "international card",
+    "expected_titles": [
+      "--- PaySiam Gateway Product Overview ---"
+    ],
+    "forbidden_titles": [
+      "--- International Travel Approval Process ---",
+      "--- International Travel Daily Allowance ---",
+      "--- International Travel Insurance ---"
+    ]
+  },
+  {
+    "id": "remote_days_natural",
+    "category": "natural_paraphrase",
+    "query": "How many remote days are allowed?",
+    "expected_titles": [
+      "--- Remote Work Policy ---"
+    ],
+    "forbidden_titles": [
+      "--- Hybrid Work Guidelines ---"
+    ]
+  },
+  {
+    "id": "work_from_home_phrase",
+    "category": "natural_paraphrase",
+    "query": "How many days can an employee work from home each week?",
+    "expected_titles": [
+      "--- Remote Work Policy ---"
+    ],
+    "forbidden_titles": [
+      "--- Hybrid Work Guidelines ---"
+    ]
+  },
+  {
+    "id": "overseas_per_diem",
+    "category": "natural_paraphrase",
+    "query": "How much is the overseas business trip per diem?",
+    "expected_titles": [
+      "--- International Travel Daily Allowance ---"
+    ],
+    "forbidden_titles": [
+      "--- International Travel Approval Process ---",
+      "--- International Travel Insurance ---"
+    ]
+  },
+  {
+    "id": "reimbursement_deadline",
+    "category": "natural_paraphrase",
+    "query": "What is the reimbursement deadline?",
+    "expected_titles": [
+      "--- Expense Reimbursement ---"
+    ],
+    "forbidden_titles": []
+  },
+  {
+    "id": "vacation_entitlements",
+    "category": "natural_paraphrase",
+    "query": "What are the annual vacation entitlements?",
+    "expected_titles": [
+      "--- Annual Leave ---"
+    ],
+    "forbidden_titles": []
+  },
+  {
+    "id": "paysiam_payment_methods",
+    "category": "natural_paraphrase",
+    "query": "What payment methods does PaySiam accept?",
+    "expected_titles": [
+      "--- PaySiam Gateway Product Overview ---"
+    ],
+    "forbidden_titles": []
+  },
+  {
+    "id": "paid_time_off",
+    "category": "natural_paraphrase",
+    "query": "How much paid time off do full-time staff receive?",
+    "expected_titles": [
+      "--- Annual Leave ---"
+    ],
+    "forbidden_titles": []
+  },
+  {
+    "id": "p2_response_time",
+    "category": "cross_domain_precision",
+    "query": "What is the response time for a P2 major degradation?",
+    "expected_titles": [
+      "--- Customer Support Service Levels ---"
+    ],
+    "forbidden_titles": [
+      "--- Support Escalation Process ---"
+    ]
+  },
+  {
+    "id": "southeast_asia_hotel_cap",
+    "category": "cross_domain_precision",
+    "query": "What is the hotel cap in Southeast Asia?",
+    "expected_titles": [
+      "--- International Travel Daily Allowance ---"
+    ],
+    "forbidden_titles": [
+      "--- Expense Reimbursement ---"
+    ]
+  },
+  {
+    "id": "paysiam_international_cards",
+    "category": "cross_domain_precision",
+    "query": "Does PaySiam support international cards?",
+    "expected_titles": [
+      "--- PaySiam Gateway Product Overview ---"
+    ],
+    "forbidden_titles": [
+      "--- International Travel Approval Process ---",
+      "--- International Travel Daily Allowance ---",
+      "--- International Travel Insurance ---"
+    ]
+  },
+  {
+    "id": "travel_multi_section_short",
+    "category": "multi_section_recall",
+    "query": "international travel",
+    "expected_titles": [
+      "--- International Travel Approval Process ---",
+      "--- International Travel Daily Allowance ---",
+      "--- International Travel Insurance ---"
+    ],
+    "forbidden_titles": []
+  },
+  {
+    "id": "travel_multi_intent_titles",
+    "category": "multi_section_recall",
+    "query": "international travel approval, allowance, and insurance requirements",
+    "expected_titles": [
+      "--- International Travel Insurance ---",
+      "--- International Travel Daily Allowance ---",
+      "--- International Travel Approval Process ---"
+    ],
+    "forbidden_titles": [
+      "--- Expense Reimbursement ---",
+      "--- PaySiam Gateway Product Overview ---"
+    ]
+  },
+  {
+    "id": "support_multi_section",
+    "category": "multi_section_recall",
+    "query": "escalate a P1 outage",
+    "expected_titles": [
+      "--- Support Escalation Process ---",
+      "--- Customer Support Service Levels ---"
+    ],
+    "forbidden_titles": []
+  },
+  {
+    "id": "unknown_salary",
+    "category": "unknown_or_generic",
+    "query": "What is the CEO's salary?",
+    "expected_titles": [],
+    "forbidden_titles": []
+  },
+  {
+    "id": "generic_policy",
+    "category": "unknown_or_generic",
+    "query": "What company policy information is available?",
+    "expected_titles": [],
+    "forbidden_titles": []
+  },
+  {
+    "id": "unknown_cafeteria",
+    "category": "unknown_or_generic",
+    "query": "What is on the office cafeteria menu?",
+    "expected_titles": [],
+    "forbidden_titles": []
+  }
+]

@@ -7,7 +7,7 @@
 
 ![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/Orchestration-LangGraph-1C3C3C)
-![Tests](https://img.shields.io/badge/tests-42%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-51%20passing%20%7C%202%20skipped-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 This repository is a deliberately small implementation of the
@@ -125,37 +125,45 @@ support. Each section begins with a machine-readable heading:
 Section content...
 ```
 
-The custom tool in `src/tools/retrieval.py` follows a small, transparent
-pipeline:
+The custom tool in `src/tools/retrieval.py` uses a transparent normalized
+weighted lexical pipeline:
 
 1. read `knowledge_base.txt` as UTF-8;
 2. reject empty files, missing section headings, and sections without bodies;
 3. split the document at section headings;
-4. normalize text with `re.findall(r"[a-z0-9]+", text.lower())`;
-5. remove English stopwords and broad enterprise terms such as `policy`,
-   `company`, `employee`, and `information`;
-6. score each section by the number of distinct query terms covered by its
-   title and body;
-7. require a strict majority of the query terms to reject incidental one-word
-   matches;
-8. for a verbose multi-intent query, retain all sections tied for the strongest
-   title coverage when at least two query terms match their titles;
-9. for a focused two-term query, retain sibling sections only when they share a
-   title anchor with a full-coverage section;
-10. sort by matched-term count and then original document order; and
-11. return every section that passes the relevance rule—there is no fixed
-   `TOP_K`.
+4. normalize reviewed phrase aliases such as `work from home` → `remote work`
+   and `per diem` → `daily allowance`;
+5. canonicalize explicit domain variants such as `remotely` → `remote` and
+   `vacation` → `leave`, without unsafe suffix stripping;
+6. remove query framing, English stopwords, and broad enterprise terms from
+   query topic terms only;
+7. calculate smoothed inverse document frequency (IDF) across the 10 sections;
+8. score each distinct query term once, with title matches weighted `1.5` and
+   body-only matches weighted `1.0`;
+9. admit a candidate when it has a title anchor or at least two matched terms;
+10. keep candidates scoring at least `60%` of the best score and at least
+    `1.0`;
+11. for a focused two-term topic, retain a lower-scoring sibling only when it
+    shares a title anchor with a full-coverage candidate;
+12. sort by descending score and then original document order; and
+13. return every section that passes the relevance gate—there is no fixed
+    `TOP_K`.
 
-This rule improves both precision and cross-section recall while remaining
-fully deterministic:
+The constants are calibrated against the 23-case Golden Retrieval Dataset in
+`tests/fixtures/retrieval_cases.json`. The gate achieves 100% exact-case pass,
+section precision, section recall, and unknown-query rejection on that checked
+dataset while remaining fully deterministic:
 
 | Query | Retrieved sections |
 |---|---|
 | `international travel` | Approval Process, Daily Allowance, Insurance |
+| `How many remote days are allowed?` | Remote Work |
+| `overseas business trip per diem` | Daily Allowance |
+| `annual vacation entitlements` | Annual Leave |
 | `international card fee` | PaySiam Gateway only |
 | `international travel insurance coverage` | Travel Insurance only |
 | `international travel approval, allowance, and insurance requirements` | All three Travel sections |
-| `escalate a P1 outage` | Customer Support Levels + Support Escalation |
+| `escalate a P1 outage` | Support Escalation + Customer Support Levels |
 | `Can I work remotely?` | Remote Work + Hybrid Work |
 | `What is the CEO's salary?` | No sections |
 
@@ -199,8 +207,11 @@ summarize, enrich, or rank the evidence.
 │   └── tools/
 │       └── retrieval.py          # parsing, scoring, and custom tool
 └── tests/
+    ├── fixtures/
+    │   └── retrieval_cases.json  # 23-case golden retrieval dataset
     ├── test_retrieval.py         # retrieval precision/recall regressions
     ├── test_graph.py             # agent behavior and graph handoff
+    ├── test_live_e2e.py          # opt-in real provider integration
     └── test_main.py              # CLI rendering and failure recovery
 ```
 
@@ -233,6 +244,8 @@ OPENAI_API_KEY=your_api_key_here
 MODEL_NAME=gpt-5-mini
 TEMPERATURE=0
 KB_PATH=knowledge_base.txt
+RUN_LIVE_LLM_TESTS=0
+LIVE_LLM_TEST_MODEL=gpt-5-mini
 ```
 
 | Variable | Required | Default | Description |
@@ -241,6 +254,8 @@ KB_PATH=knowledge_base.txt
 | `MODEL_NAME` | No | `gpt-5-mini` | Chat model used by both agents |
 | `TEMPERATURE` | No | `0` | Used for models that support a custom temperature |
 | `KB_PATH` | No | `knowledge_base.txt` | Path to the local text knowledge base |
+| `RUN_LIVE_LLM_TESTS` | No | `0` | Set to `1` only when explicitly running live provider tests |
+| `LIVE_LLM_TEST_MODEL` | No | `gpt-5-mini` | Model used by the opt-in integration tests |
 
 `.env` and virtual environments are ignored by Git. Never commit a real API
 key.
@@ -284,33 +299,77 @@ What is the CEO's salary?
 
 ## Tests
 
-Run the complete offline suite:
+Run the complete default suite:
 
 ```bash
 python -m unittest discover -v
 ```
 
-The current suite contains **42 tests** covering:
+The default run discovers **53 tests**: **51 pass offline** and the **2 live
+tests are skipped**. It covers:
 
 - knowledge-base loading and section splitting;
-- focused and unknown-query retrieval;
+- phrase/token normalization and query-framing removal;
+- deterministic IDF and weighted title/body scoring;
+- the 23-case Golden Retrieval Dataset;
+- exact-case pass rate, section precision/recall, and unknown rejection;
+- focused, natural-language, multi-section, and unknown-query retrieval;
 - stopword and generic-term false-positive protection;
-- multi-term precision and stronger term-coverage rules;
-- verbose multi-intent recall through strongest title-topic coverage;
+- relative-to-best relevance gating;
+- verbose multi-intent recall;
 - cross-section recall;
-- title-linked sibling retrieval and its false-positive guard;
 - complete relevant-section retrieval and deterministic ordering;
 - exact Retriever tool-call contract enforcement;
 - malformed knowledge-base rejection;
 - string and structured Report Generator output;
 - raw-snippet handoff through LangGraph;
-- exact two-node graph topology; and
+- exact two-node graph topology;
 - deterministic not-found behavior without a Generator LLM call;
 - CLI exception chaining, safe error rendering, exit status, and interactive
   recovery.
 
 The suite uses mocks at the LLM boundary, so it needs no API key and makes no
-network requests.
+network requests. The live tests remain skipped unless explicitly enabled.
+
+### Opt-in live LLM integration
+
+The live gate verifies authentication, model/tool-call compatibility, the
+actual `ChatOpenAI.bind_tools()` response shape, raw corpus handoff, and the
+real Retriever → Tool → Reporter path:
+
+```bash
+RUN_LIVE_LLM_TESTS=1 \
+LIVE_LLM_TEST_MODEL=gpt-5-mini \
+python -m unittest tests.test_live_e2e -v
+```
+
+`OPENAI_API_KEY` must be present in the environment or `.env`; otherwise the
+opted-in class is skipped with a clear reason. The two tests use only fictional
+knowledge-base questions and make approximately three provider calls:
+
+| Test | Retriever LLM | Reporter LLM | Total |
+|---|---:|---:|---:|
+| Known international-travel query | 1 | 1 | 2 |
+| Unknown CEO-salary query | 1 | 0 | 1 |
+
+The known-query assertion checks structural contracts and verifies that every
+returned snippet is byte-for-byte one of the loaded corpus sections. It does
+not assert exact generative wording. The unknown path verifies the exact
+deterministic not-found sentence.
+
+For a submission or release check, run:
+
+```bash
+python -m compileall -q main.py src tests
+python -m pip check
+python -m unittest discover -v
+git diff --check
+```
+
+Run the live command separately only with an approved project-scoped key,
+provider usage limits, and controlled egress. Do not publish prompts, raw
+responses, environment dumps, authorization headers, or credentials as CI
+artifacts.
 
 ## Example results
 
@@ -352,11 +411,12 @@ validation enforces exactly one correctly named call with the unchanged
 original query. Only the custom tool reads the knowledge base; the Retriever's
 model output is not treated as evidence.
 
-**Why deterministic lexical retrieval.** For a 10-section assignment corpus, a
-transparent keyword rule is easier to explain, audit, and test than an
-embedding index. Strict-majority coverage, strongest title-topic coverage, and
-the constrained sibling rule reduce false positives while preserving
-complementary evidence.
+**Why normalized weighted lexical retrieval.** For a 10-section assignment
+corpus, reviewed phrase/token aliases plus IDF-weighted title/body matching are
+easier to explain, audit, and test than an embedding index. The relative
+relevance gate tolerates natural-language filler without letting a broad
+one-term match overwhelm a focused section. The threshold and aliases are
+versioned with the Golden Dataset instead of being tuned from one example.
 
 **Why raw state handoff.** Keeping source sections unchanged makes it possible
 to compare the Generator's input directly with `knowledge_base.txt`. This
@@ -381,14 +441,16 @@ reviewer's Python 3.11 environment.
 This repository intentionally optimizes for clarity and assignment alignment,
 not production scale.
 
-- **Lexical matching only:** synonyms and conceptual similarity are not
-  understood.
-- **No stemming:** variants such as `remote` and `remotely` remain different
-  tokens unless both appear in a relevant section.
+- **Curated lexical semantics only:** reviewed aliases cover evaluated domain
+  language, but unseen synonyms and conceptual similarity are not understood.
+- **No general stemming:** explicit aliases avoid corrupting terms such as
+  `business` and product names, but unlisted morphological variants can still
+  miss.
 - **English query terms:** effective retrieval requires specific English terms
-  present in the knowledge base.
-- **Heuristic relevance gate:** strict-majority coverage is explainable but
-  should be calibrated against a larger, representative query set.
+  present in the knowledge base or its reviewed alias vocabulary.
+- **Heuristic relevance gate:** the `1.5` title weight and `0.60` relative
+  cutoff pass the current 23-case dataset but require recalibration against
+  representative production traffic.
 - **Small local corpus:** a linear scan is appropriate for 10 sections, not
   hundreds of thousands of documents.
 - **Prompt-level grounding:** the Generator is strongly instructed to use only
@@ -397,8 +459,8 @@ not production scale.
   monitoring, or rate-limit handling.
 
 A production evolution would add document ingestion and lifecycle management,
-hybrid lexical/vector retrieval, metadata filters and access control, a
-retrieval evaluation dataset, answer faithfulness checks, tracing, cost and
+a larger labeled retrieval dataset, hybrid lexical/vector retrieval, metadata
+filters and access control, answer faithfulness checks, tracing, cost and
 latency monitoring, provider error handling, and a deployable API layer.
 
 ## License
