@@ -75,6 +75,58 @@ class RetrievalTests(unittest.TestCase):
 
         self.assertEqual(first, second)
 
+    def test_multi_term_query_rejects_single_term_title_matches(self) -> None:
+        snippets = search_knowledge_base.invoke(
+            {"query": "What is the international card fee?"}
+        )
+
+        self.assertEqual(
+            _titles(snippets),
+            ["--- PaySiam Gateway Product Overview ---"],
+        )
+
+    def test_specific_query_requires_stronger_term_coverage(self) -> None:
+        snippets = search_knowledge_base.invoke(
+            {"query": "What is the international travel insurance coverage?"}
+        )
+
+        self.assertEqual(
+            _titles(snippets),
+            ["--- International Travel Insurance ---"],
+        )
+
+    def test_partial_matches_retrieve_cross_section_evidence(self) -> None:
+        snippets = search_knowledge_base.invoke(
+            {"query": "How do I escalate a P1 outage?"}
+        )
+
+        self.assertEqual(
+            _titles(snippets),
+            [
+                "--- Customer Support Service Levels ---",
+                "--- Support Escalation Process ---",
+            ],
+        )
+
+    def test_two_term_query_keeps_title_linked_sections(self) -> None:
+        snippets = search_knowledge_base.invoke({"query": "Can I work remotely?"})
+
+        self.assertEqual(
+            _titles(snippets),
+            [
+                "--- Remote Work Policy ---",
+                "--- Hybrid Work Guidelines ---",
+            ],
+        )
+
+    def test_two_term_query_does_not_expand_without_full_title_anchor(self) -> None:
+        snippets = search_knowledge_base.invoke({"query": "international card"})
+
+        self.assertEqual(
+            _titles(snippets),
+            ["--- PaySiam Gateway Product Overview ---"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
