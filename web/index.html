@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Simple Agentic RAG</title>
+    <meta
+      name="description"
+      content="Two-agent RAG workflow: Data Retriever Agent hands raw evidence to a Report Generator Agent."
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Cpath d='M9 11h14M9 16h14M9 21h8' stroke='white' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+
+  <body>
+    <div class="app">
+      <header class="app-header">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M5 7h14M5 12h14M5 17h8" />
+            </svg>
+          </span>
+          <div class="brand-text">
+            <h1>Simple Agentic RAG</h1>
+            <p>Data Retriever Agent&nbsp;→&nbsp;Report Generator Agent</p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          id="source-toggle"
+          class="source-pill"
+          aria-live="polite"
+          title="Switch between bundled mock data and a live backend"
+        >
+          <span class="source-dot" aria-hidden="true"></span>
+          <span id="source-label">Mock data</span>
+        </button>
+      </header>
+
+      <!-- ── Query ─────────────────────────────────────────────────────── -->
+      <section class="card query-card">
+        <label class="field-label" for="query-input">Ask the knowledge base</label>
+
+        <form id="query-form" class="query-row" novalidate>
+          <div class="input-wrap">
+            <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" stroke-linecap="round" />
+            </svg>
+            <input
+              id="query-input"
+              name="query"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="e.g. What is the policy on international travel?"
+            />
+          </div>
+          <button type="submit" id="run-button" class="btn-primary">
+            <span class="btn-label">Run</span>
+            <span class="spinner" aria-hidden="true"></span>
+          </button>
+        </form>
+
+        <div class="chips" id="sample-chips" aria-label="Sample queries"></div>
+      </section>
+
+      <p id="live-region" class="sr-only" role="status" aria-live="polite"></p>
+
+      <!-- ── Empty state ───────────────────────────────────────────────── -->
+      <section class="card state-card" id="empty-state">
+        <span class="state-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h9L20 9.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5z" />
+            <path d="M14 4v6h6" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </span>
+        <h2>No query run yet</h2>
+        <p>
+          Ask a question to watch the workflow execute end to end — retrieval, the raw
+          evidence handoff, and the grounded answer are each shown as a separate stage.
+        </p>
+      </section>
+
+      <!-- ── Error state ───────────────────────────────────────────────── -->
+      <section class="card error-card" id="error-state" hidden>
+        <span class="state-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <circle cx="12" cy="12" r="8.5" />
+            <path d="M12 8v5M12 16h.01" stroke-linecap="round" />
+          </svg>
+        </span>
+        <div class="error-body">
+          <h2>Workflow failed</h2>
+          <p id="error-message">Something went wrong.</p>
+        </div>
+        <button type="button" id="retry-button" class="btn-ghost">Retry</button>
+      </section>
+
+      <!-- ── Pipeline ──────────────────────────────────────────────────── -->
+      <ol class="pipeline" id="pipeline" hidden>
+        <!-- 1 · User query -->
+        <li class="step" data-step="query">
+          <span class="step-marker" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <circle cx="12" cy="8.5" r="3.5" />
+              <path d="M5.5 19.5a6.5 6.5 0 0 1 13 0" stroke-linecap="round" />
+            </svg>
+          </span>
+          <article class="card step-card">
+            <header class="step-head">
+              <div class="step-title">
+                <span class="step-index">Step 1</span>
+                <h2>User Query</h2>
+              </div>
+              <span class="badge" data-badge="query">Waiting</span>
+            </header>
+            <p class="query-echo" id="stage-query"></p>
+          </article>
+        </li>
+
+        <!-- 2 · Data Retriever Agent -->
+        <li class="step" data-step="retriever">
+          <span class="step-marker" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <ellipse cx="12" cy="6" rx="7" ry="3" />
+              <path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6" />
+              <path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3" />
+            </svg>
+          </span>
+          <article class="card step-card">
+            <header class="step-head">
+              <div class="step-title">
+                <span class="step-index">Step 2 · Agent</span>
+                <h2>Data Retriever Agent</h2>
+              </div>
+              <span class="badge" data-badge="retriever">Waiting</span>
+            </header>
+            <p class="step-note">
+              Calls the retrieval tool once and hands its output on untouched — it never
+              answers, summarises, or rewrites.
+            </p>
+            <pre class="tool-call" id="stage-tool-call"><code></code></pre>
+            <dl class="meta" id="retriever-meta"></dl>
+          </article>
+        </li>
+
+        <!-- 3 · Retrieved evidence -->
+        <li class="step" data-step="evidence">
+          <span class="step-marker" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M6 4h9l4 4v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" />
+              <path d="M9 12h6M9 16h4" stroke-linecap="round" />
+            </svg>
+          </span>
+          <article class="card step-card">
+            <header class="step-head">
+              <div class="step-title">
+                <span class="step-index">Step 3 · Handoff</span>
+                <h2>Retrieved Evidence</h2>
+              </div>
+              <span class="badge" data-badge="evidence">Waiting</span>
+            </header>
+            <p class="step-note">Raw sections exactly as returned by the tool.</p>
+            <div id="evidence-list" class="evidence-list"></div>
+          </article>
+        </li>
+
+        <!-- 4 · Report Generator Agent -->
+        <li class="step" data-step="generator">
+          <span class="step-marker" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M12 3.5 13.7 8l4.5 1.7-4.5 1.7L12 16l-1.7-4.6L5.8 9.7 10.3 8z" stroke-linejoin="round" />
+              <path d="M18 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" stroke-linejoin="round" />
+            </svg>
+          </span>
+          <article class="card step-card">
+            <header class="step-head">
+              <div class="step-title">
+                <span class="step-index">Step 4 · Agent</span>
+                <h2>Report Generator Agent</h2>
+              </div>
+              <span class="badge" data-badge="generator">Waiting</span>
+            </header>
+            <p class="step-note">
+              Synthesises one grounded answer from the retrieved evidence only.
+            </p>
+            <dl class="meta" id="generator-meta"></dl>
+          </article>
+        </li>
+
+        <!-- 5 · Final answer -->
+        <li class="step" data-step="answer">
+          <span class="step-marker" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="m5 12.5 4.5 4.5L19 7.5" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </span>
+          <article class="card step-card answer-card">
+            <header class="step-head">
+              <div class="step-title">
+                <span class="step-index">Step 5</span>
+                <h2>Final Answer</h2>
+              </div>
+              <div class="head-actions">
+                <button type="button" class="btn-icon" id="copy-answer" hidden>Copy</button>
+                <span class="badge" data-badge="answer">Waiting</span>
+              </div>
+            </header>
+            <div id="answer-body" class="answer-body"></div>
+            <dl class="meta" id="answer-meta"></dl>
+          </article>
+        </li>
+      </ol>
+
+      <footer class="app-footer">
+        <span>LangGraph · <code>START → data_retriever → report_generator → END</code></span>
+      </footer>
+    </div>
+
+    <script src="mock-data.js"></script>
+    <script src="api.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

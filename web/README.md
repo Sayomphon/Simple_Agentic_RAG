@@ -1,0 +1,123 @@
+# Simple Agentic RAG — Web UI
+
+A single-page front end for the two-agent pipeline. It renders the workflow as
+five sequential stages so the agent handoff is visible:
+
+```text
+User Query → Data Retriever Agent → Retrieved Evidence → Report Generator Agent → Final Answer
+```
+
+The retrieved evidence is shown **raw and unmodified**, separately from the
+synthesised answer — that separation is the point of the demo, since it lets a
+reviewer check the Generator's input against `knowledge_base.txt` directly.
+
+## Run it
+
+No build step, no dependencies, no install.
+
+```bash
+open web/index.html          # macOS — double-clicking works too
+```
+
+The UI starts on bundled mock data, so every state is demonstrable offline. For
+live mode (which needs `fetch`), serve the folder over HTTP:
+
+```bash
+python3 -m http.server 8000  # then open http://localhost:8000/web/
+```
+
+## Files
+
+| File | Responsibility |
+|---|---|
+| `index.html` | Markup for the five stages, query form, and empty/error states |
+| `styles.css` | Design tokens, layout, badges, skeletons, light + dark themes |
+| `api.js` | **The only backend seam.** `runWorkflow(query, { onStage })` |
+| `mock-data.js` | Offline fixtures: the 10 real KB sections + a matching gate |
+| `app.js` | One state object, one render pass per change |
+
+State is a single plain object in `app.js`; there is no framework, store, or
+router. Adding a stage means adding an `<li class="step">` and a renderer.
+
+## Connect the Python backend
+
+Everything the UI needs is behind `RagApi.runWorkflow`, so wiring it up is two
+steps:
+
+**1. Expose the graph over HTTP.** The response mirrors `PipelineState` exactly:
+
+```python
+# server.py
+from fastapi import FastAPI
+from pydantic import BaseModel
+from src.graph import build_graph
+
+app = FastAPI()
+graph = build_graph()
+
+class Query(BaseModel):
+    query: str
+
+@app.post("/api/query")
+def run(payload: Query) -> dict:
+    result = graph.invoke({"query": payload.query, "snippets": [], "report": ""})
+    return {
+        "query": payload.query,
+        "snippets": result["snippets"],   # raw, exactly as the tool returned them
+        "report": result["report"],
+    }
+```
+
+**2. Flip the source pill** in the header to **Live backend** (persisted in
+`localStorage`), or change the default in `api.js`:
+
+```js
+var CONFIG = {
+  endpoint: "/api/query",   // absolute URL if the API is on another origin
+  model: "gpt-5-mini",      // metadata display only
+  timeoutMs: 60000
+};
+```
+
+Serving the UI from a different origin than the API needs CORS enabled on the
+Python side.
+
+### Contract notes
+
+- `snippets` must stay **byte-identical** to `search_knowledge_base` output. The
+  evidence panel exists to prove the Retriever did not rewrite anything.
+- An empty `snippets` array is a **valid result, not an error**. The UI shows the
+  *No evidence found* badge and the exact not-found sentence, matching the
+  Reporter's deterministic short-circuit.
+- `NOT_FOUND_SENTENCE` in `api.js` must match `src/agents/reporter.py`.
+- Failures (protocol violation, malformed corpus, provider error) should return a
+  non-2xx with `{"error": "..."}`; the UI surfaces that message and marks the
+  unfinished stages as *Failed*.
+
+### Per-node progress
+
+The pipeline answers in one round trip, so live-mode stage transitions are
+derived from that single response. For true per-node progress, expose an SSE
+endpoint over LangGraph's `graph.stream()` and emit from `runLive` in `api.js` as
+each node event arrives — no other file changes.
+
+## States
+
+Each sample chip demonstrates a different path:
+
+| Chip | State |
+|---|---|
+| *What is the policy on international travel?* | Multi-section retrieval → grounded synthesis with citations |
+| *Can I work remotely?* | Two complementary sections merged into one answer |
+| *What is the refund policy?* | Not-found — no evidence, deterministic fallback, no LLM call |
+
+Empty state shows before the first query. Loading shows skeletons with per-stage
+`Running` badges. Errors surface inline with a retry.
+
+## About the mock
+
+`mock-data.js` embeds the 10 sections from `knowledge_base.txt` verbatim and
+mirrors the real retrieval gate (title weight 1.5, body 1.0, keep ≥ 60% of the
+best score, plus the two-term sibling rule) closely enough to return the same
+sections as the Python tool for the golden queries. It is a fixture for demoing
+the UI, not a second implementation — delete it once the backend is wired up.

@@ -29,8 +29,9 @@ The system then:
    state; and
 5. produces a concise answer based only on those sections.
 
-The CLI displays the query, retrieved evidence, and final answer as separate
-stages, making the RAG handoff easy to audit.
+Both front ends — the CLI and the bundled web UI — display the query, retrieved
+evidence, and final answer as separate stages, making the RAG handoff easy to
+audit.
 
 ### Key properties
 
@@ -49,6 +50,9 @@ stages, making the RAG handoff easy to audit.
   as errors.
 - **Resilient CLI boundary:** one failed interactive query is reported safely
   without ending the session.
+- **Inspectable web UI:** a dependency-free single-page front end renders the
+  same five stages, keeping raw evidence visually separate from the synthesised
+  answer.
 - **Offline test suite:** retrieval and orchestration tests require neither an
   API key nor network access.
 
@@ -180,6 +184,7 @@ summarize, enrich, or rank the evidence.
 | LLM integration | LangChain OpenAI | `ChatOpenAI` client and tool binding |
 | Configuration | python-dotenv | Local environment configuration |
 | Knowledge store | UTF-8 text file | Small, inspectable evidence source |
+| Web UI | HTML, CSS, vanilla JS | Dependency-free stage-by-stage demo front end |
 | Testing | `unittest` | Offline regression and graph tests |
 
 ## Project structure
@@ -194,9 +199,10 @@ summarize, enrich, or rank the evidence.
 ├── LICENSE
 ├── README.md
 ├── screenshots/
-│   ├── 01_international_travel.png
+│   ├── 01_international_travel.png       # CLI runs
 │   ├── 02_remote_work.png
-│   └── 03_not_found.png
+│   ├── 03_not_found.png
+│   └── ui_01_empty.png … ui_07_dark.png  # web UI states
 ├── src/
 │   ├── config.py                 # model, temperature, and KB path
 │   ├── graph.py                  # PipelineState and LangGraph wiring
@@ -206,13 +212,20 @@ summarize, enrich, or rank the evidence.
 │   │   └── reporter.py           # Report Generator node
 │   └── tools/
 │       └── retrieval.py          # parsing, scoring, and custom tool
-└── tests/
-    ├── fixtures/
-    │   └── retrieval_cases.json  # 23-case golden retrieval dataset
-    ├── test_retrieval.py         # retrieval precision/recall regressions
-    ├── test_graph.py             # agent behavior and graph handoff
-    ├── test_live_e2e.py          # opt-in real provider integration
-    └── test_main.py              # CLI rendering and failure recovery
+├── tests/
+│   ├── fixtures/
+│   │   └── retrieval_cases.json  # 23-case golden retrieval dataset
+│   ├── test_retrieval.py         # retrieval precision/recall regressions
+│   ├── test_graph.py             # agent behavior and graph handoff
+│   ├── test_live_e2e.py          # opt-in real provider integration
+│   └── test_main.py              # CLI rendering and failure recovery
+└── web/                          # dependency-free single-page UI
+    ├── index.html                # markup for the five pipeline stages
+    ├── styles.css                # tokens, badges, light and dark themes
+    ├── api.js                    # the only backend seam
+    ├── mock-data.js              # offline fixtures for the demo
+    ├── app.js                    # state and rendering
+    └── README.md                 # run and backend-wiring guide
 ```
 
 ## Quick start
@@ -297,6 +310,29 @@ What is the CEO's salary?
 - The CEO salary query retrieves nothing and returns the deterministic
   not-found sentence.
 
+### Web interface
+
+The repository also ships a single-page UI that renders the same workflow as five
+sequential stages, keeping the raw retrieved evidence visually separate from the
+synthesised answer.
+
+```bash
+open web/index.html
+```
+
+There is no build step, no `npm install`, and no dependencies. The page starts on
+**bundled mock data** — fixtures copied verbatim from `knowledge_base.txt` — so
+every state is demonstrable offline, including the not-found guardrail.
+
+![Web UI empty state before the first query](screenshots/ui_01_empty.png)
+
+This repository contains no HTTP service, so live mode requires adding one.
+`web/api.js` is the single seam: point `CONFIG.endpoint` at a `POST /api/query`
+route that returns `PipelineState` as JSON, then switch the header pill to
+**Live backend**. [`web/README.md`](web/README.md) contains the FastAPI snippet
+and the full contract, including why an empty `snippets` array is a valid result
+rather than an error.
+
 ## Tests
 
 Run the complete default suite:
@@ -373,30 +409,77 @@ artifacts.
 
 ## Example results
 
+### Command-line interface
+
 The screenshots below were captured from successful live CLI runs with
 `gpt-5-mini`. Each image shows the user query, the raw evidence handoff, and the
 final grounded answer.
 
-### International travel — multi-section synthesis
+#### International travel — multi-section synthesis
 
 The assignment's sample question retrieves Approval Process, Daily Allowance,
 and Insurance sections before producing one cohesive answer.
 
 ![International travel query with three retrieved sections and a grounded answer](screenshots/01_international_travel.png)
 
-### Remote work — related-section synthesis
+#### Remote work — related-section synthesis
 
 The system combines Remote Work Policy and Hybrid Work Guidelines without
 duplicating overlapping information.
 
 ![Remote work query with Remote Work and Hybrid Work evidence](screenshots/02_remote_work.png)
 
-### Knowledge-base gap — deterministic not-found
+#### Knowledge-base gap — deterministic not-found
 
 Executive salary information does not exist in the knowledge base, so the
 system returns the fixed fallback instead of inventing an answer.
 
 ![CEO salary query returning the deterministic not-found answer](screenshots/03_not_found.png)
+
+### Web interface
+
+These screenshots come from the bundled UI running on **mock fixtures**, not a
+live provider call. The retrieved sections are byte-identical to
+`knowledge_base.txt`, and the mock gate returns the same sections as the Python
+tool for the queries in the table above.
+
+#### International travel — evidence handoff made visible
+
+Step 2 shows the forced single tool call and confirms the query reached the tool
+unchanged. Step 3 shows all three sections raw. Step 5 shows the synthesised
+answer with its section citations.
+
+![Web UI with three raw sections and a grounded answer](screenshots/ui_03_international_travel.png)
+
+#### Not-found guardrail
+
+No section clears the relevance gate, so the evidence panel reports
+*No evidence found* and the Report Generator returns the deterministic sentence
+without an LLM call.
+
+![Web UI showing the not-found state with zero snippets](screenshots/ui_04_not_found.png)
+
+#### Loading state
+
+Each stage reports its own status while the workflow runs, so the sequence
+Retriever → Evidence → Generator → Answer stays visible in flight.
+
+![Web UI running with per-stage status badges and skeletons](screenshots/ui_02_running.png)
+
+#### Backend failure
+
+A failure is not converted into a not-found. The error is surfaced with the
+unfinished stages marked *Failed*, matching the CLI's failure semantics.
+
+![Web UI error state after an unreachable backend](screenshots/ui_05_error.png)
+
+#### Responsive and dark theme
+
+The same five stages on a 390 px viewport and in the dark colour scheme.
+
+| Mobile | Dark |
+|---|---|
+| ![Web UI on a mobile viewport](screenshots/ui_06_mobile_remote_work.png) | ![Web UI in dark theme](screenshots/ui_07_dark.png) |
 
 ## Design decisions
 
@@ -455,8 +538,12 @@ not production scale.
   hundreds of thousands of documents.
 - **Prompt-level grounding:** the Generator is strongly instructed to use only
   snippets, but production systems should also evaluate claims and citations.
-- **Single-process CLI:** there is no API service, authentication, persistence,
-  monitoring, or rate-limit handling.
+- **No service layer:** the pipeline runs in-process behind the CLI. There is no
+  HTTP API, authentication, persistence, monitoring, or rate-limit handling.
+- **Mock-first web UI:** because no service exists yet, the front end ships with
+  offline fixtures. They reproduce the retrieval gate's decisions for the
+  evaluated queries but do not execute the Python tool, so the UI is a
+  demonstration of the workflow rather than a second implementation of it.
 
 A production evolution would add document ingestion and lifecycle management,
 a larger labeled retrieval dataset, hybrid lexical/vector retrieval, metadata
