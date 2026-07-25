@@ -43,6 +43,10 @@ Rules:
 """
 
 
+class ReportGenerationError(RuntimeError):
+    """Raised when the Report Generator returns no textual answer."""
+
+
 def generator_node(state: PipelineState) -> dict[str, str]:
     """Synthesize the final grounded answer from the handed-off snippets.
 
@@ -57,7 +61,7 @@ def generator_node(state: PipelineState) -> dict[str, str]:
         return {"report": NOT_FOUND_SENTENCE}
 
     snippets_text = "\n\n".join(state["snippets"])
-    msg = get_llm().invoke(
+    message = get_llm().invoke(
         [
             SystemMessage(content=REPORTER_SYSTEM_PROMPT),
             HumanMessage(
@@ -65,4 +69,10 @@ def generator_node(state: PipelineState) -> dict[str, str]:
             ),
         ]
     )
-    return {"report": str(msg.content)}
+    report = str(message.text).strip()
+    if not report:
+        raise ReportGenerationError(
+            "Report Generator returned no textual content"
+        )
+
+    return {"report": report}

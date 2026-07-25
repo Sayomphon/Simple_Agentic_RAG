@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 
-from src.tools.retrieval import load_knowledge_base, search_knowledge_base
+from src.tools.retrieval import (
+    KnowledgeBaseFormatError,
+    load_knowledge_base,
+    search,
+    search_knowledge_base,
+)
 
 
 def _titles(snippets: list[str]) -> list[str]:
@@ -148,6 +155,98 @@ class RetrievalTests(unittest.TestCase):
             _titles(snippets),
             ["--- PaySiam Gateway Product Overview ---"],
         )
+
+    def test_empty_knowledge_base_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "empty.txt"
+            path.write_text("", encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                KnowledgeBaseFormatError,
+                "Knowledge base is empty",
+            ) as context:
+                load_knowledge_base(path)
+
+            self.assertIn(str(path), str(context.exception))
+
+    def test_whitespace_only_knowledge_base_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "whitespace.txt"
+            path.write_text("  \n\t\n", encoding="utf-8")
+
+            with self.assertRaises(KnowledgeBaseFormatError) as context:
+                load_knowledge_base(path)
+
+            self.assertIn(str(path), str(context.exception))
+
+    def test_nonempty_file_without_section_header_is_rejected(self) -> None:
+        sensitive_content = "confidential corpus payload"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "malformed.txt"
+            path.write_text(sensitive_content, encoding="utf-8")
+
+            with self.assertRaises(KnowledgeBaseFormatError) as context:
+                load_knowledge_base(path)
+
+            message = str(context.exception)
+            self.assertIn(str(path), message)
+            self.assertNotIn(sensitive_content, message)
+
+    def test_section_without_body_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "missing-body.txt"
+            path.write_text("--- Empty Section ---\n  ", encoding="utf-8")
+
+            with self.assertRaises(KnowledgeBaseFormatError) as context:
+                load_knowledge_base(path)
+
+            message = str(context.exception)
+            self.assertIn(str(path), message)
+            self.assertIn("Empty Section", message)
+
+    def test_valid_one_section_file_loads(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "one-section.txt"
+            path.write_text(
+                "--- One Section ---\nOne section body.\n",
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                load_knowledge_base(path),
+                ["--- One Section ---\nOne section body."],
+            )
+
+    def test_valid_multi_section_file_preserves_order(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "multi-section.txt"
+            path.write_text(
+                "--- First ---\nFirst body.\n\n"
+                "--- Second ---\nSecond body.\n",
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                _titles(load_knowledge_base(path)),
+                ["--- First ---", "--- Second ---"],
+            )
+
+    def test_search_validates_corpus_before_returning_no_match(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "malformed.txt"
+            path.write_text("not a section", encoding="utf-8")
+
+            with self.assertRaises(KnowledgeBaseFormatError):
+                search("the company policy", path)
+
+    def test_missing_knowledge_base_preserves_file_not_found_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "missing.txt"
+
+            with self.assertRaises(FileNotFoundError) as context:
+                load_knowledge_base(path)
+
+            self.assertIn(str(path), str(context.exception))
 
 
 if __name__ == "__main__":

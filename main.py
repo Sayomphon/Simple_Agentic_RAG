@@ -19,6 +19,10 @@ BANNER = "=" * 68
 DIVIDER = "-" * 68
 
 
+class QueryExecutionError(RuntimeError):
+    """Raised when one graph execution fails at the application boundary."""
+
+
 def require_api_key() -> None:
     """Load local environment values and stop safely when no API key exists."""
     load_dotenv()
@@ -32,7 +36,12 @@ def require_api_key() -> None:
 def run_query(graph: CompiledStateGraph, query: str) -> dict[str, object]:
     """Run one query and print the evidence handoff before the final answer."""
     initial_state = {"query": query, "snippets": [], "report": ""}
-    result = graph.invoke(initial_state)
+    try:
+        result = graph.invoke(initial_state)
+    except Exception as exc:
+        raise QueryExecutionError(
+            "The RAG pipeline could not process this query"
+        ) from exc
 
     print(BANNER)
     print("[1] USER QUERY")
@@ -52,7 +61,12 @@ def run_query(graph: CompiledStateGraph, query: str) -> dict[str, object]:
     return dict(result)
 
 
-def main() -> None:
+def _print_query_error(error: QueryExecutionError) -> None:
+    """Render a concise failure without exposing query or pipeline payloads."""
+    print(f"ERROR: {error}", file=sys.stderr)
+
+
+def main() -> int:
     """Validate configuration, compile the graph once, and accept CLI input."""
     require_api_key()
     graph = build_graph()
@@ -61,8 +75,12 @@ def main() -> None:
         query = " ".join(sys.argv[1:]).strip()
         if not query:
             raise SystemExit('Usage: python main.py "<your question>"')
-        run_query(graph, query)
-        return
+        try:
+            run_query(graph, query)
+        except QueryExecutionError as exc:
+            _print_query_error(exc)
+            return 1
+        return 0
 
     print("Simple Agentic RAG — type an empty line, 'exit', or Ctrl-C to quit.")
     while True:
@@ -70,11 +88,14 @@ def main() -> None:
             query = input("\nquery> ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
-            return
+            return 0
         if query.lower() in {"", "exit", "quit"}:
-            return
-        run_query(graph, query)
+            return 0
+        try:
+            run_query(graph, query)
+        except QueryExecutionError as exc:
+            _print_query_error(exc)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

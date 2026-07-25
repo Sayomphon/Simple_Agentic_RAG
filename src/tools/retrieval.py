@@ -111,6 +111,10 @@ DOMAIN_GENERIC_TERMS = frozenset(
 )
 
 
+class KnowledgeBaseFormatError(ValueError):
+    """Raised when the knowledge-base file violates the section contract."""
+
+
 def tokenize(text: str) -> set[str]:
     """Return unique normalized English/alphanumeric terms."""
     return set(TOKEN_PATTERN.findall(text.lower()))
@@ -130,25 +134,39 @@ def load_knowledge_base(path: str | Path | None = None) -> list[str]:
     """
     kb_path = Path(path if path is not None else KB_PATH)
     text = kb_path.read_text(encoding="utf-8")
+    if not text.strip():
+        raise KnowledgeBaseFormatError(f"Knowledge base is empty: {kb_path}")
+
     matches = list(SECTION_PATTERN.finditer(text))
+    if not matches:
+        raise KnowledgeBaseFormatError(
+            f"No valid section headers found in: {kb_path}"
+        )
 
     chunks: list[str] = []
     for index, match in enumerate(matches):
         end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        body = text[match.end() : end]
+        if not body.strip():
+            title = match.group("title").strip()
+            raise KnowledgeBaseFormatError(
+                f"Knowledge base section has no body ({title!r}): {kb_path}"
+            )
+
         chunk = text[match.start() : end].strip()
-        if chunk:
-            chunks.append(chunk)
+        chunks.append(chunk)
     return chunks
 
 
 def search(query: str, path: str | Path | None = None) -> list[str]:
     """Return every keyword-relevant chunk in deterministic rank order."""
+    chunks = load_knowledge_base(path)
     query_terms = discriminative_terms(query)
     if not query_terms:
         return []
 
     candidates: list[tuple[int, int, frozenset[str], str]] = []
-    for index, chunk in enumerate(load_knowledge_base(path)):
+    for index, chunk in enumerate(chunks):
         title, _, body = chunk.partition("\n")
         title_terms = tokenize(title)
         body_terms = tokenize(body)
@@ -227,6 +245,7 @@ def search_knowledge_base(query: str) -> list[str]:
 
 
 __all__ = [
+    "KnowledgeBaseFormatError",
     "discriminative_terms",
     "load_knowledge_base",
     "search",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -24,6 +25,10 @@ Your only task is to retrieve evidence:
 """
 
 
+class RetrievalProtocolError(RuntimeError):
+    """Raised when the Retriever LLM violates the required tool-call contract."""
+
+
 def retriever_node(state: PipelineState) -> dict[str, list[str]]:
     """Execute the model-requested custom tool call and hand off its output."""
     llm_with_tool = get_llm().bind_tools(
@@ -37,10 +42,31 @@ def retriever_node(state: PipelineState) -> dict[str, list[str]]:
         ]
     )
 
-    if not response.tool_calls:
-        # Fail closed: without an auditable tool call there is no evidence.
-        return {"snippets": []}
+    tool_calls = getattr(response, "tool_calls", None) or []
+    if len(tool_calls) != 1:
+        raise RetrievalProtocolError(
+            "Data Retriever must request exactly one retrieval tool call"
+        )
 
-    tool_call = response.tool_calls[0]
-    snippets = search_knowledge_base.invoke(tool_call["args"])
+    tool_call = tool_calls[0]
+    if not isinstance(tool_call, Mapping):
+        raise RetrievalProtocolError(
+            "Data Retriever returned a malformed retrieval tool call"
+        )
+
+    if tool_call.get("name") != search_knowledge_base.name:
+        raise RetrievalProtocolError(
+            "Data Retriever requested an unexpected retrieval tool"
+        )
+
+    tool_args = tool_call.get("args") or {}
+    if not isinstance(tool_args, Mapping):
+        raise RetrievalProtocolError(
+            "Data Retriever returned malformed retrieval arguments"
+        )
+
+    if tool_args.get("query") != state["query"]:
+        raise RetrievalProtocolError("Data Retriever changed the original query")
+
+    snippets = search_knowledge_base.invoke({"query": state["query"]})
     return {"snippets": list(snippets)}

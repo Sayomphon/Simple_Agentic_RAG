@@ -7,11 +7,11 @@
 
 ![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/Orchestration-LangGraph-1C3C3C)
-![Tests](https://img.shields.io/badge/tests-18%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-42%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 This repository is a deliberately small implementation of the
-[AI Engineer Programming Test](<AI Engineer Programming Test.md>). It focuses
+AI Engineer Programming Test. It focuses
 on the assignment's core engineering concerns: clear agent responsibilities, a
 custom Retrieval-Augmented Generation (RAG) tool, explicit orchestration,
 inspectable evidence handoff, grounded generation, and reproducible offline
@@ -44,8 +44,11 @@ stages, making the RAG handoff easy to audit.
   sections it returns.
 - **Grounded generation:** the Generator is instructed to use only the
   retrieved evidence.
-- **Fail-closed behavior:** empty retrieval returns an exact not-found sentence
-  without calling the Generator LLM.
+- **Explicit failure semantics:** a valid empty search returns an exact
+  not-found sentence, while protocol, corpus, and model-output failures surface
+  as errors.
+- **Resilient CLI boundary:** one failed interactive query is reported safely
+  without ending the session.
 - **Offline test suite:** retrieval and orchestration tests require neither an
   API key nor network access.
 
@@ -93,7 +96,9 @@ class PipelineState(TypedDict):
 
 - binds only the `search_knowledge_base` tool;
 - uses `tool_choice="required"` so the model must request a tool call;
-- executes one requested retrieval call;
+- validates that the model requested exactly one correctly named tool call;
+- rejects any model-rewritten query and executes the original graph-state
+  query as the source of truth;
 - writes the tool's unmodified `list[str]` result to `state["snippets"]`; and
 - never produces the user-facing answer.
 
@@ -124,20 +129,21 @@ The custom tool in `src/tools/retrieval.py` follows a small, transparent
 pipeline:
 
 1. read `knowledge_base.txt` as UTF-8;
-2. split the document at section headings;
-3. normalize text with `re.findall(r"[a-z0-9]+", text.lower())`;
-4. remove English stopwords and broad enterprise terms such as `policy`,
+2. reject empty files, missing section headings, and sections without bodies;
+3. split the document at section headings;
+4. normalize text with `re.findall(r"[a-z0-9]+", text.lower())`;
+5. remove English stopwords and broad enterprise terms such as `policy`,
    `company`, `employee`, and `information`;
-5. score each section by the number of distinct query terms covered by its
+6. score each section by the number of distinct query terms covered by its
    title and body;
-6. require a strict majority of the query terms to reject incidental one-word
+7. require a strict majority of the query terms to reject incidental one-word
    matches;
-7. for a verbose multi-intent query, retain all sections tied for the strongest
+8. for a verbose multi-intent query, retain all sections tied for the strongest
    title coverage when at least two query terms match their titles;
-8. for a focused two-term query, retain sibling sections only when they share a
+9. for a focused two-term query, retain sibling sections only when they share a
    title anchor with a full-coverage section;
-9. sort by matched-term count and then original document order; and
-10. return every section that passes the relevance rule—there is no fixed
+10. sort by matched-term count and then original document order; and
+11. return every section that passes the relevance rule—there is no fixed
    `TOP_K`.
 
 This rule improves both precision and cross-section recall while remaining
@@ -194,7 +200,8 @@ summarize, enrich, or rank the evidence.
 │       └── retrieval.py          # parsing, scoring, and custom tool
 └── tests/
     ├── test_retrieval.py         # retrieval precision/recall regressions
-    └── test_graph.py             # agent behavior and graph handoff
+    ├── test_graph.py             # agent behavior and graph handoff
+    └── test_main.py              # CLI rendering and failure recovery
 ```
 
 ## Quick start
@@ -283,7 +290,7 @@ Run the complete offline suite:
 python -m unittest discover -v
 ```
 
-The current suite contains **18 tests** covering:
+The current suite contains **42 tests** covering:
 
 - knowledge-base loading and section splitting;
 - focused and unknown-query retrieval;
@@ -293,10 +300,14 @@ The current suite contains **18 tests** covering:
 - cross-section recall;
 - title-linked sibling retrieval and its false-positive guard;
 - complete relevant-section retrieval and deterministic ordering;
-- forced tool execution and fail-closed behavior;
+- exact Retriever tool-call contract enforcement;
+- malformed knowledge-base rejection;
+- string and structured Report Generator output;
 - raw-snippet handoff through LangGraph;
 - exact two-node graph topology; and
-- deterministic not-found behavior without a Generator LLM call.
+- deterministic not-found behavior without a Generator LLM call;
+- CLI exception chaining, safe error rendering, exit status, and interactive
+  recovery.
 
 The suite uses mocks at the LLM boundary, so it needs no API key and makes no
 network requests.
@@ -336,8 +347,9 @@ each transition is an explicit edge, and `snippets` is a visible state field
 rather than an implicit function-call detail.
 
 **Why a forced retrieval tool call.** Binding the Retriever with
-`tool_choice="required"` prevents it from replacing evidence retrieval with a
-direct answer. Only the custom tool reads the knowledge base; the Retriever's
+`tool_choice="required"` asks the model to use retrieval, while runtime
+validation enforces exactly one correctly named call with the unchanged
+original query. Only the custom tool reads the knowledge base; the Retriever's
 model output is not treated as evidence.
 
 **Why deterministic lexical retrieval.** For a 10-section assignment corpus, a
@@ -353,6 +365,13 @@ separates retrieval quality from answer-generation quality.
 **Why short-circuit empty evidence.** When `snippets` is empty, there is nothing
 safe to synthesize. Returning a fixed sentence without an LLM call reduces
 hallucination risk, latency, and API cost.
+
+**Why failures are not converted to not-found.** A missing tool call, malformed
+corpus, or empty model response means the pipeline failed; it does not prove
+that the requested information is absent. These errors retain their original
+cause internally, while the CLI emits a concise message without raw queries,
+prompts, snippets, or credentials. Single-query mode exits non-zero, and
+interactive mode continues with the next query.
 
 **Why pinned dependencies.** Exact versions reduce installation drift in a
 reviewer's Python 3.11 environment.
