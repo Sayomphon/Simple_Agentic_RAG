@@ -94,7 +94,9 @@ summarize, or enrich the content.
 ├── .gitignore
 ├── README.md
 ├── screenshots/
-│   └── .gitkeep
+│   ├── 01_international_travel.png
+│   ├── 02_remote_work.png
+│   └── 03_not_found.png
 ├── src/
 │   ├── __init__.py
 │   ├── config.py
@@ -182,10 +184,20 @@ network access.
 
 ## Screenshots
 
-Live screenshots will be added after the three sample queries complete
-successfully against the configured OpenAI project. The old screenshots from
-the larger prototype were intentionally removed because they no longer matched
-this submission workflow.
+The following screenshots were captured from successful live runs of the
+submission CLI with `gpt-5-mini`.
+
+### International travel
+
+![International travel result](screenshots/01_international_travel.png)
+
+### Remote work with multiple snippets
+
+![Remote work result](screenshots/02_remote_work.png)
+
+### Information not found
+
+![Not-found result](screenshots/03_not_found.png)
 
 ## Design decisions
 
