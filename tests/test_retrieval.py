@@ -95,6 +95,28 @@ class RetrievalTests(unittest.TestCase):
             ["--- International Travel Insurance ---"],
         )
 
+    def test_verbose_multi_intent_query_returns_all_title_aligned_sections(
+        self,
+    ) -> None:
+        snippets = search_knowledge_base.invoke(
+            {
+                "query": (
+                    "Summarize all international travel rules including "
+                    "approval, booking, allowance, lodging, insurance, "
+                    "and claims."
+                )
+            }
+        )
+
+        self.assertEqual(
+            _titles(snippets),
+            [
+                "--- International Travel Insurance ---",
+                "--- International Travel Approval Process ---",
+                "--- International Travel Daily Allowance ---",
+            ],
+        )
+
     def test_partial_matches_retrieve_cross_section_evidence(self) -> None:
         snippets = search_knowledge_base.invoke(
             {"query": "How do I escalate a P1 outage?"}

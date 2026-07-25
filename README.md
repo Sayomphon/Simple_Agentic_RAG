@@ -7,7 +7,7 @@
 
 ![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/Orchestration-LangGraph-1C3C3C)
-![Tests](https://img.shields.io/badge/tests-17%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-18%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 This repository is a deliberately small implementation of the
@@ -132,10 +132,12 @@ pipeline:
    title and body;
 6. require a strict majority of the query terms to reject incidental one-word
    matches;
-7. for a focused two-term query, retain sibling sections only when they share a
+7. for a verbose multi-intent query, retain all sections tied for the strongest
+   title coverage when at least two query terms match their titles;
+8. for a focused two-term query, retain sibling sections only when they share a
    title anchor with a full-coverage section;
-8. sort by matched-term count and then original document order; and
-9. return every section that passes the relevance rule—there is no fixed
+9. sort by matched-term count and then original document order; and
+10. return every section that passes the relevance rule—there is no fixed
    `TOP_K`.
 
 This rule improves both precision and cross-section recall while remaining
@@ -146,6 +148,7 @@ fully deterministic:
 | `international travel` | Approval Process, Daily Allowance, Insurance |
 | `international card fee` | PaySiam Gateway only |
 | `international travel insurance coverage` | Travel Insurance only |
+| `international travel approval, allowance, and insurance requirements` | All three Travel sections |
 | `escalate a P1 outage` | Customer Support Levels + Support Escalation |
 | `Can I work remotely?` | Remote Work + Hybrid Work |
 | `What is the CEO's salary?` | No sections |
@@ -280,12 +283,13 @@ Run the complete offline suite:
 python -m unittest discover -v
 ```
 
-The current suite contains **17 tests** covering:
+The current suite contains **18 tests** covering:
 
 - knowledge-base loading and section splitting;
 - focused and unknown-query retrieval;
 - stopword and generic-term false-positive protection;
 - multi-term precision and stronger term-coverage rules;
+- verbose multi-intent recall through strongest title-topic coverage;
 - cross-section recall;
 - title-linked sibling retrieval and its false-positive guard;
 - complete relevant-section retrieval and deterministic ordering;
@@ -338,8 +342,9 @@ model output is not treated as evidence.
 
 **Why deterministic lexical retrieval.** For a 10-section assignment corpus, a
 transparent keyword rule is easier to explain, audit, and test than an
-embedding index. Strict-majority coverage and the constrained sibling rule
-reduce false positives while preserving complementary evidence.
+embedding index. Strict-majority coverage, strongest title-topic coverage, and
+the constrained sibling rule reduce false positives while preserving
+complementary evidence.
 
 **Why raw state handoff.** Keeping source sections unchanged makes it possible
 to compare the Generator's input directly with `knowledge_base.txt`. This

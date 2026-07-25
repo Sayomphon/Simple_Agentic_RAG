@@ -11,6 +11,7 @@ from src.config import KB_PATH
 
 SECTION_PATTERN = re.compile(r"^---\s*(?P<title>.+?)\s*---\s*$", re.MULTILINE)
 TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
+MIN_TITLE_TOPIC_MATCHES = 2
 
 # These terms express sentence structure rather than the subject to retrieve.
 STOPWORDS = frozenset(
@@ -167,6 +168,17 @@ def search(query: str, path: str | Path | None = None) -> list[str]:
     # complementary sections to contribute different parts of a longer query.
     required_matches = len(query_terms) // 2 + 1
 
+    # A verbose multi-intent query can distribute its terms across several
+    # sections, so no individual section may satisfy the strict-majority rule.
+    # Retain every section tied for the strongest title coverage when that
+    # coverage contains at least two query terms. This treats a multi-term title
+    # match as a reliable topic anchor while still rejecting weak matches such
+    # as the single word "international" in an international-card query.
+    strongest_title_coverage = max(
+        (len(title_matches) for _, _, title_matches, _ in candidates),
+        default=0,
+    )
+
     # For a focused two-term topic, retain sibling sections that share a title
     # anchor with a full-coverage section. For example, "work remotely" first
     # identifies Remote Work Policy and then keeps Hybrid Work Guidelines via
@@ -182,10 +194,18 @@ def search(query: str, path: str | Path | None = None) -> list[str]:
     ranked: list[tuple[int, int, str]] = []
     for score, index, title_matches, chunk in candidates:
         has_majority_coverage = score >= required_matches
+        has_strongest_title_coverage = (
+            strongest_title_coverage >= MIN_TITLE_TOPIC_MATCHES
+            and len(title_matches) == strongest_title_coverage
+        )
         is_title_linked_sibling = bool(
             linked_title_anchors and title_matches & linked_title_anchors
         )
-        if has_majority_coverage or is_title_linked_sibling:
+        if (
+            has_majority_coverage
+            or has_strongest_title_coverage
+            or is_title_linked_sibling
+        ):
             ranked.append((score, index, chunk))
 
     ranked.sort(key=lambda item: (-item[0], item[1]))
