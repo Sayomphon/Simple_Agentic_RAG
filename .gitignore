@@ -5,6 +5,7 @@
 
 # Virtual environments
 .venv/
+.venv-clean/
 venv/
 env/
 

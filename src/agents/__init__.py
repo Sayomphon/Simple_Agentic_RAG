@@ -1,8 +1,4 @@
-"""Agent definitions: Data Retriever and Report Generator nodes.
-
-Also hosts :func:`get_llm`, the single place where the ChatOpenAI client
-is constructed, so both agents share one configuration.
-"""
+"""Shared LLM construction for the two submission agents."""
 
 from functools import lru_cache
 

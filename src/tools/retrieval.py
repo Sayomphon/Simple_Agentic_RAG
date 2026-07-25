@@ -1,75 +1,190 @@
-"""RAG retrieval tool: ranked search over the knowledge base.
-
-This module is the boundary between agents and retrieval. Agents import
-exactly two names from here — ``search_knowledge_base`` (the tool) and
-``has_english_search_terms`` (the query-language probe) — and both are
-re-exported unchanged no matter which retrieval strategy is active.
-
-The strategies themselves (BM25, OpenAI embeddings, hybrid fusion) live in
-``src/retrievers/``; ``get_retriever`` picks one by ``config.SEARCH_MODE``.
-Adding another strategy means one new class and one new factory branch —
-this tool, the agents, and the graph stay untouched.
-"""
+"""Deterministic keyword retrieval over the local text knowledge base."""
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 from langchain_core.tools import tool
 
-from src.config import TOP_K
-from src.retrievers import ScoredChunk, get_retriever, has_english_search_terms
+from src.config import KB_PATH
 
-__all__ = ["has_english_search_terms", "search_knowledge_base", "search_scored"]
+SECTION_PATTERN = re.compile(r"^---\s*(?P<title>.+?)\s*---\s*$", re.MULTILINE)
+TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
+
+# These terms express sentence structure rather than the subject to retrieve.
+STOPWORDS = frozenset(
+    {
+        "a",
+        "about",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "available",
+        "be",
+        "been",
+        "being",
+        "by",
+        "can",
+        "could",
+        "did",
+        "do",
+        "does",
+        "for",
+        "from",
+        "had",
+        "has",
+        "have",
+        "he",
+        "her",
+        "here",
+        "him",
+        "his",
+        "how",
+        "i",
+        "in",
+        "is",
+        "it",
+        "its",
+        "may",
+        "me",
+        "my",
+        "of",
+        "on",
+        "or",
+        "our",
+        "please",
+        "s",
+        "she",
+        "should",
+        "tell",
+        "that",
+        "the",
+        "their",
+        "them",
+        "there",
+        "these",
+        "they",
+        "this",
+        "those",
+        "to",
+        "us",
+        "was",
+        "we",
+        "were",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "why",
+        "will",
+        "with",
+        "would",
+        "you",
+        "your",
+    }
+)
+
+# These terms recur across most enterprise handbook sections and do not
+# identify which section the user needs.
+DOMAIN_GENERIC_TERMS = frozenset(
+    {
+        "business",
+        "company",
+        "detail",
+        "details",
+        "employee",
+        "employees",
+        "information",
+        "policy",
+        "policies",
+        "process",
+        "request",
+        "requests",
+        "rule",
+        "rules",
+    }
+)
 
 
-def search_scored(
-    query: str,
-    top_k: int | None = None,
-    mode: str | None = None,
-) -> list[ScoredChunk]:
-    """Ranked search returning full hits (title, score, source) — the single
-    retrieval path shared by the tool below, the agent node, and UI layers.
+def tokenize(text: str) -> set[str]:
+    """Return unique normalized English/alphanumeric terms."""
+    return set(TOKEN_PATTERN.findall(text.lower()))
 
-    Args:
-        query: Search terms describing the information needed.
-        top_k: Result cap; ``None`` uses ``config.TOP_K``.
-        mode: Retrieval mode override; ``None`` uses ``config.SEARCH_MODE``.
+
+def discriminative_terms(query: str) -> set[str]:
+    """Remove structural and domain-generic terms from a user query."""
+    return tokenize(query) - STOPWORDS - DOMAIN_GENERIC_TERMS
+
+
+def load_knowledge_base(path: str | Path | None = None) -> list[str]:
+    """Read a section-formatted text file and return its raw chunks.
+
+    Each section must begin with ``--- Section title ---``. The returned
+    strings preserve the title header and body exactly apart from surrounding
+    whitespace, making the tool output an auditable slice of the source file.
     """
-    return get_retriever(mode).search(
-        query, top_k=TOP_K if top_k is None else top_k
-    )
+    kb_path = Path(path if path is not None else KB_PATH)
+    text = kb_path.read_text(encoding="utf-8")
+    matches = list(SECTION_PATTERN.finditer(text))
+
+    chunks: list[str] = []
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        chunk = text[match.start() : end].strip()
+        if chunk:
+            chunks.append(chunk)
+    return chunks
+
+
+def search(query: str, path: str | Path | None = None) -> list[str]:
+    """Return every keyword-relevant chunk in deterministic rank order."""
+    query_terms = discriminative_terms(query)
+    if not query_terms:
+        return []
+
+    ranked: list[tuple[int, int, str]] = []
+    for index, chunk in enumerate(load_knowledge_base(path)):
+        title, _, body = chunk.partition("\n")
+        title_terms = tokenize(title)
+        body_terms = tokenize(body)
+        chunk_terms = title_terms | body_terms
+        score = len(query_terms & chunk_terms)
+
+        # A title match anchors the query to the section's declared topic.
+        # Content-only matches are accepted when every discriminative query
+        # term is present, preventing one incidental word from surfacing an
+        # unrelated section.
+        is_relevant = bool(query_terms & title_terms) or query_terms.issubset(
+            body_terms
+        )
+        if score > 0 and is_relevant:
+            ranked.append((score, index, chunk))
+
+    ranked.sort(key=lambda item: (-item[0], item[1]))
+    return [chunk for _, _, chunk in ranked]
 
 
 @tool
 def search_knowledge_base(query: str) -> list[str]:
-    """Search the Siam Innovate company knowledge base for policy information.
+    """Search the local knowledge base and return all raw relevant sections.
 
-    The knowledge base is the official employee handbook covering topics
-    such as travel, leave, remote work, expenses, IT security, benefits,
-    and HR processes. Returns raw text snippets ranked most-relevant
-    first. Returns an empty list when the handbook contains nothing
-    relevant to the query.
+    Use specific English subject terms found in the user's request. The tool
+    returns an empty list when no discriminative keyword matches a section.
 
     Args:
         query: Search terms describing the information needed.
     """
-    return [hit.as_snippet() for hit in search_scored(query)]
+    return search(query)
 
 
-if __name__ == "__main__":  # Standalone verification — no LLM involved.
-    from src.config import SEARCH_MODE
-
-    retriever = get_retriever()
-    print(f"SEARCH_MODE={SEARCH_MODE}  retriever={type(retriever).__name__}")
-    for q in [
-        "international travel policy",
-        "work from home",
-        "annual leave",
-        "What is the CEO's salary?",
-        "What are the cybersecurity incident reporting rules?",
-    ]:
-        print(f'\n=== "{q}" ===')
-        hits = retriever.search(q, TOP_K)
-        if not hits:
-            print("  (no results passed the relevance gates)")
-        for hit in hits:
-            print(f"  {hit.score:7.4f}  [{hit.source}]  {hit.title}")
+__all__ = [
+    "discriminative_terms",
+    "load_knowledge_base",
+    "search",
+    "search_knowledge_base",
+    "tokenize",
+]

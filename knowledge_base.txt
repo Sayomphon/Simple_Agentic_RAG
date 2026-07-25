@@ -1,0 +1,73 @@
+--- Remote Work Policy ---
+Employees may work remotely up to 3 days per week with manager approval.
+Requests must be submitted through the FlexWork portal by Thursday of the
+preceding week. Remote employees must be reachable on Microsoft Teams during
+agreed working hours and use the TigerLink VPN for internal systems. New hires
+must work fully on-site during their first 30 calendar days.
+
+--- Hybrid Work Guidelines ---
+Siam Innovate uses a hybrid working model. Core collaboration hours are 10:00
+to 16:00 Bangkok time, during which employees must be available for meetings
+regardless of location. Tuesday is the company-wide office anchor day, and
+teams may define one additional anchor day. Office desks must be reserved in
+the SpaceLy app at least one day in advance.
+
+--- Annual Leave ---
+Full-time employees receive 15 days of paid annual leave per calendar year,
+accrued at 1.25 days per month. The entitlement increases to 20 days after
+five full years of service. Up to 5 unused days may be carried into the first
+quarter of the following year and expire on 31 March. Leave requests must be
+submitted through LeaveDesk at least 3 business days in advance for absences
+of 3 days or fewer and 14 days in advance for longer absences.
+
+--- International Travel Approval Process ---
+Employees traveling internationally for business must obtain written approval
+from their department head at least 14 days before departure. Requests are
+submitted through TravelHub under "Overseas Trip Request" with a trip purpose,
+itinerary, and cost estimate. Trips longer than 10 business days also require
+Managing Director approval. Once approved, the Travel Desk books economy-class
+airfare through the contracted travel agency.
+
+--- International Travel Daily Allowance ---
+Approved international business travel receives a daily allowance of 2,400 THB
+for meals and incidental expenses. Departure and return days receive half the
+daily rate, or 1,200 THB. Hotel caps are 5,500 THB per night in Southeast Asia
+and 8,000 THB elsewhere. Hotel and ground-transport receipts must be uploaded
+to ExpenseFlow within 45 days after returning.
+
+--- International Travel Insurance ---
+International business trips are automatically covered by the SafeJourney
+Plan B group travel insurance. Coverage includes emergency medical treatment
+up to 3,000,000 THB, emergency evacuation, and lost-luggage compensation up to
+40,000 THB per trip. Claims must be filed through the SafeJourney portal within
+30 days of returning, with original receipts and the TravelHub approval.
+
+--- Expense Reimbursement ---
+Business expenses must be claimed through ExpenseFlow with scanned receipts
+within 45 days of the expense date. Claims below 20,000 THB require line-manager
+approval; claims of 20,000 THB or more also require Finance approval. Approved
+amounts are paid with the next payroll. Alcohol, traffic fines, minibar charges,
+and personal subscriptions are not reimbursable.
+
+--- PaySiam Gateway Product Overview ---
+PaySiam Gateway is an online payment platform for Thai small and medium
+merchants. It supports PromptPay QR, domestic and international cards, mobile
+banking transfers, and installment plans. Standard pricing is 1.85% per
+successful domestic card or QR transaction and 2.95% for international cards,
+with no setup fee or monthly minimum. Settlement uses a T+2 business-day cycle.
+
+--- Customer Support Service Levels ---
+Standard product support operates from 09:00 to 18:00 Bangkok time on working
+days. Platinum support operates around the clock. For a P1 production outage,
+the first-response target is 15 minutes for Platinum and 1 hour for Standard.
+For a P2 major degradation, the targets are 1 hour and 4 hours respectively.
+Cases are created in the customer portal and receive a CS-XXXXXX tracking
+number.
+
+--- Support Escalation Process ---
+Customers or account managers may escalate a support case through the customer
+portal or escalations@siaminnovate.example using the CS case number. Escalated
+cases are owned by the duty manager. A P1 case open for more than 4 hours
+automatically starts a bridge call and status updates every 30 minutes until
+service is restored. A cause summary is completed within 5 business days after
+an escalated case closes.
