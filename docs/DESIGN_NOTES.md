@@ -103,6 +103,32 @@ use an LLM to rank, rewrite, summarize, or enrich evidence, and it has no fixed
 `TOP_K`. At this corpus size, returning every section that passes the rule
 preserves cross-section answers better than an arbitrary cap.
 
+## Term frequency: measured, then dropped
+
+BM25-style TF saturation (`tf/(tf+K_TF)` on body-only matches) was
+implemented behind `RetrievalSettings(use_tf_saturation=True)` and evaluated
+as a seventh ablation rung on the 27-case calibration set (2026-07-26):
+
+| variant | exact | P_macro | R_macro | F1 | MRR | FP_neg |
+|---|---|---|---|---|---|---|
+| V5 (+stemming) | 100.0% | 100.0% | 100.0% | 1.000 | 1.000 | 0.0% |
+| V6 (+TF saturation, K_TF=0.05) | 100.0% | 100.0% | 100.0% | 1.000 | 1.000 | 0.0% |
+
+Two findings led to dropping it from the default configuration:
+
+1. A `K_TF x MIN_RELATIVE_SCORE` sweep against the calibration set showed
+   the constraint is binding at `K_TF <= 0.08` with the shipped `0.60`
+   relative cutoff: these sections are so short (term frequencies are
+   almost always 1) that any stronger TF signal shrinks body scores until
+   broad title-only matches outrank multi-term body evidence
+   (`international card` starts admitting the travel sections).
+2. At the largest safe constant, V6 equals V5 on every metric — the layer
+   buys nothing measurable.
+
+Per the decision rule in IMPROVEMENT_PLAN §4.2, the default is
+`use_tf_saturation=False`, the ablation ladder ends at `V5_current`, and
+the scoring path remains available to evaluations via settings.
+
 ## Bounded agent behavior
 
 The Retriever uses an LLM because the assignment explicitly asks for an agent

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import math
 import re
+from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -67,6 +69,13 @@ TITLE_MATCH_WEIGHT = 1.5
 BODY_MATCH_WEIGHT = 1.0
 MIN_RELATIVE_SCORE = 0.60
 MIN_ABSOLUTE_SCORE = 1.0
+# TF saturation is off by default: the ablation study measured no metric
+# gain over stemming alone, and the calibration sweep showed any K_TF
+# above 0.05 lets title-only matches outrank multi-term body evidence in
+# these short sections. See docs/DESIGN_NOTES.md ("Term frequency:
+# measured, then dropped"). The scoring path stays available to evals
+# via RetrievalSettings(use_tf_saturation=True).
+K_TF = 0.05
 
 # These terms express sentence structure rather than the subject to retrieve.
 STOPWORDS = frozenset(
@@ -171,6 +180,28 @@ class KnowledgeBaseFormatError(ValueError):
 
 
 @dataclass(frozen=True)
+class RetrievalSettings:
+    """Feature switches for the scoring pipeline, used by the ablation study.
+
+    The defaults reproduce the production pipeline exactly; every eval
+    variant is expressed as a non-default instance. See EVALUATION_PLAN §6.
+    """
+
+    use_query_filters: bool = True
+    use_aliases: bool = True
+    use_idf: bool = True
+    title_weight: float = TITLE_MATCH_WEIGHT
+    use_relevance_gate: bool = True
+    use_sibling_expansion: bool = True
+    use_stemming: bool = True
+    use_tf_saturation: bool = False
+    k_tf: float = K_TF
+
+
+DEFAULT_SETTINGS = RetrievalSettings()
+
+
+@dataclass(frozen=True)
 class ScoredChunk:
     """A scored source section and the evidence used to rank it."""
 
@@ -224,7 +255,7 @@ def stem(token: str) -> str:
     """Light inflectional stemmer: -s/-es/-ies/-ed/-ing + final-e elision.
 
     Runs the single-pass rules to a fixpoint so stemming is idempotent —
-    e.g. ``expenses -> expens`` directly rather than via an intermediate
+    e.g. ``expenses -> expen`` directly rather than via an intermediate
     ``expense`` that a second call would shorten further. Derivational
     forms and synonyms remain the alias tables' responsibility.
     """
@@ -247,27 +278,47 @@ def normalize_phrases(text: str) -> str:
     return normalized
 
 
-def normalized_tokens(text: str, *, is_query: bool) -> frozenset[str]:
-    """Return canonical tokens for query or document-side matching.
+def normalized_token_counts(
+    text: str,
+    *,
+    is_query: bool,
+    settings: RetrievalSettings = DEFAULT_SETTINGS,
+) -> Counter[str]:
+    """Count canonical-token occurrences for query or document text.
 
     Order matters: reviewed aliases win over the automatic stemmer, and
     the filter sets are defined on surface forms, so both apply before
     stemming. Query and document sides share the same final stem step,
     which keeps their canonical spaces aligned by construction.
     """
-    phrase_normalized = normalize_phrases(text)
-    raw_tokens = TOKEN_PATTERN.findall(phrase_normalized)
-    canonical = {
-        TOKEN_ALIASES.get(token, token)
-        for token in raw_tokens
-    }
+    source = normalize_phrases(text) if settings.use_aliases else text.lower()
 
-    if is_query:
-        canonical -= STOPWORDS
-        canonical -= DOMAIN_GENERIC_TERMS
-        canonical -= QUERY_FRAMING_TERMS
+    counts: Counter[str] = Counter()
+    for token in TOKEN_PATTERN.findall(source):
+        if settings.use_aliases:
+            token = TOKEN_ALIASES.get(token, token)
+        if is_query and settings.use_query_filters and (
+            token in STOPWORDS
+            or token in DOMAIN_GENERIC_TERMS
+            or token in QUERY_FRAMING_TERMS
+        ):
+            continue
+        if settings.use_stemming:
+            token = stem(token)
+        counts[token] += 1
+    return counts
 
-    return frozenset(stem(token) for token in canonical)
+
+def normalized_tokens(
+    text: str,
+    *,
+    is_query: bool,
+    settings: RetrievalSettings = DEFAULT_SETTINGS,
+) -> frozenset[str]:
+    """Return canonical tokens for query or document-side matching."""
+    return frozenset(
+        normalized_token_counts(text, is_query=is_query, settings=settings)
+    )
 
 
 def discriminative_terms(query: str) -> set[str]:
@@ -293,22 +344,34 @@ def inverse_document_frequency(
 def score_chunk(
     query_terms: frozenset[str],
     title_terms: frozenset[str],
-    body_terms: frozenset[str],
+    body_counts: Mapping[str, int],
     idf_by_term: dict[str, float],
+    settings: RetrievalSettings = DEFAULT_SETTINGS,
 ) -> tuple[float, frozenset[str], frozenset[str]]:
-    """Score distinct title/body term matches without double-counting."""
+    """Score distinct title/body term matches without double-counting.
+
+    Title matches stay binary — titles are too short for frequency to
+    mean anything. Body-only matches optionally saturate with term
+    frequency (BM25-style ``tf/(tf+k)``), which affects ranking margins
+    while candidacy and cutoffs keep operating on term presence.
+    """
     title_matches = query_terms & title_terms
-    body_only_matches = (query_terms & body_terms) - title_matches
+    body_only_matches = (
+        query_terms & frozenset(body_counts)
+    ) - title_matches
     matched_terms = title_matches | body_only_matches
 
     title_score = sum(
-        idf_by_term[term] * TITLE_MATCH_WEIGHT
+        idf_by_term[term] * settings.title_weight
         for term in title_matches
     )
-    body_score = sum(
-        idf_by_term[term] * BODY_MATCH_WEIGHT
-        for term in body_only_matches
-    )
+    body_score = 0.0
+    for term in body_only_matches:
+        term_weight = idf_by_term[term] * BODY_MATCH_WEIGHT
+        if settings.use_tf_saturation:
+            term_frequency = body_counts[term]
+            term_weight *= term_frequency / (term_frequency + settings.k_tf)
+        body_score += term_weight
     return title_score + body_score, matched_terms, title_matches
 
 
@@ -353,65 +416,85 @@ def load_knowledge_base(path: str | Path | None = None) -> list[str]:
     return chunks
 
 
-def search(query: str, path: str | Path | None = None) -> list[str]:
+def search(
+    query: str,
+    path: str | Path | None = None,
+    *,
+    settings: RetrievalSettings = DEFAULT_SETTINGS,
+) -> list[str]:
     """Return normalized lexical matches in deterministic relevance order."""
     chunks = load_knowledge_base(path)
-    query_terms = normalized_tokens(query, is_query=True)
+    query_terms = normalized_tokens(query, is_query=True, settings=settings)
     if not query_terms:
         return []
 
     parsed_chunks: list[
-        tuple[int, str, frozenset[str], frozenset[str]]
+        tuple[int, str, frozenset[str], Counter[str]]
     ] = []
     document_terms: list[frozenset[str]] = []
     for index, chunk in enumerate(chunks):
         title, _, body = chunk.partition("\n")
-        title_terms = normalized_tokens(title, is_query=False)
-        body_terms = normalized_tokens(body, is_query=False)
-        parsed_chunks.append((index, chunk, title_terms, body_terms))
-        document_terms.append(title_terms | body_terms)
+        title_terms = normalized_tokens(title, is_query=False, settings=settings)
+        body_counts = normalized_token_counts(
+            body, is_query=False, settings=settings
+        )
+        parsed_chunks.append((index, chunk, title_terms, body_counts))
+        document_terms.append(title_terms | frozenset(body_counts))
 
     idf_by_term = {
-        term: inverse_document_frequency(term, document_terms)
+        term: (
+            inverse_document_frequency(term, document_terms)
+            if settings.use_idf
+            else 1.0
+        )
         for term in query_terms
     }
 
     candidates: list[ScoredChunk] = []
-    for index, chunk, title_terms, body_terms in parsed_chunks:
+    for index, chunk, title_terms, body_counts in parsed_chunks:
         score, matched_terms, title_matches = score_chunk(
             query_terms,
             title_terms,
-            body_terms,
+            body_counts,
             idf_by_term,
+            settings,
         )
-        if is_candidate(matched_terms, title_matches):
-            candidates.append(
-                ScoredChunk(
-                    index=index,
-                    chunk=chunk,
-                    matched_terms=matched_terms,
-                    title_matches=title_matches,
-                    score=score,
-                )
+        if not matched_terms:
+            continue
+        if settings.use_relevance_gate and not is_candidate(
+            matched_terms, title_matches
+        ):
+            continue
+        candidates.append(
+            ScoredChunk(
+                index=index,
+                chunk=chunk,
+                matched_terms=matched_terms,
+                title_matches=title_matches,
+                score=score,
             )
+        )
 
     if not candidates:
         return []
 
-    best_score = max(candidate.score for candidate in candidates)
-    cutoff = max(MIN_ABSOLUTE_SCORE, best_score * MIN_RELATIVE_SCORE)
-    selected = [
-        candidate
-        for candidate in candidates
-        if candidate.score >= cutoff
-    ]
+    if settings.use_relevance_gate:
+        best_score = max(candidate.score for candidate in candidates)
+        cutoff = max(MIN_ABSOLUTE_SCORE, best_score * MIN_RELATIVE_SCORE)
+        selected = [
+            candidate
+            for candidate in candidates
+            if candidate.score >= cutoff
+        ]
+    else:
+        selected = list(candidates)
 
     # A focused two-term topic may have a lower-scoring sibling section that
     # shares a title anchor with a full-coverage result. This generic relation
     # recovers complementary evidence such as Hybrid Work for "work remotely"
     # without admitting Travel sections for "international card": the latter
     # has no full-coverage candidate with a matching title anchor.
-    if len(query_terms) == 2:
+    if settings.use_sibling_expansion and len(query_terms) == 2:
         linked_title_anchors: set[str] = set()
         for candidate in selected:
             if candidate.matched_terms == query_terms:
@@ -445,11 +528,14 @@ def search_knowledge_base(query: str) -> list[str]:
 
 __all__ = [
     "BODY_MATCH_WEIGHT",
+    "DEFAULT_SETTINGS",
+    "K_TF",
     "KnowledgeBaseFormatError",
     "MIN_ABSOLUTE_SCORE",
     "MIN_RELATIVE_SCORE",
     "PHRASE_ALIASES",
     "QUERY_FRAMING_TERMS",
+    "RetrievalSettings",
     "ScoredChunk",
     "TITLE_MATCH_WEIGHT",
     "TOKEN_ALIASES",
@@ -458,6 +544,7 @@ __all__ = [
     "is_candidate",
     "load_knowledge_base",
     "normalize_phrases",
+    "normalized_token_counts",
     "normalized_tokens",
     "search",
     "search_knowledge_base",

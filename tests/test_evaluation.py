@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from src.evaluation.ablation import build_variants
 from src.evaluation.dataset import (
     DatasetValidationError,
     EvalCase,
@@ -21,6 +22,7 @@ from src.evaluation.metrics import (
     query_recall,
     reciprocal_rank,
 )
+from src.tools.retrieval import DEFAULT_SETTINGS, search
 
 
 class DatasetLoaderTests(unittest.TestCase):
@@ -203,6 +205,37 @@ class EvaluateTests(unittest.TestCase):
         self.assertEqual(metrics.recall_macro, 0.0)
         self.assertEqual(metrics.f1_macro, 0.0)
         self.assertEqual(metrics.mrr, 0.0)
+
+
+class AblationTests(unittest.TestCase):
+    def test_final_rung_equals_production_settings(self) -> None:
+        # The ablation must never drift from shipped behavior: its last
+        # variant is exactly what search() uses by default.
+        variants = build_variants()
+        final_name, final_settings = list(variants.items())[-1]
+
+        self.assertEqual(final_settings, DEFAULT_SETTINGS)
+        self.assertIn("current", final_name)
+
+    def test_first_rung_disables_every_layer(self) -> None:
+        first_settings = next(iter(build_variants().values()))
+
+        self.assertFalse(first_settings.use_query_filters)
+        self.assertFalse(first_settings.use_aliases)
+        self.assertFalse(first_settings.use_idf)
+        self.assertFalse(first_settings.use_relevance_gate)
+        self.assertFalse(first_settings.use_sibling_expansion)
+        self.assertFalse(first_settings.use_stemming)
+        self.assertFalse(first_settings.use_tf_saturation)
+        self.assertEqual(first_settings.title_weight, 1.0)
+
+    def test_explicit_default_settings_match_implicit_default(self) -> None:
+        for case in load_cases("calibration"):
+            with self.subTest(case_id=case.id):
+                self.assertEqual(
+                    search(case.query),
+                    search(case.query, settings=DEFAULT_SETTINGS),
+                )
 
 
 if __name__ == "__main__":

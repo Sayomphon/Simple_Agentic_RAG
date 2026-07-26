@@ -15,6 +15,7 @@ from src.evaluation.metrics import QueryOutcome, evaluate
 from src.tools.retrieval import (
     BODY_MATCH_WEIGHT,
     KnowledgeBaseFormatError,
+    RetrievalSettings,
     STOPWORDS,
     TITLE_MATCH_WEIGHT,
     TOKEN_ALIASES,
@@ -437,11 +438,13 @@ class RetrievalNormalizationTests(unittest.TestCase):
             inverse_document_frequency("term", [])
 
     def test_score_chunk_counts_title_match_only_once(self) -> None:
+        presence_only = RetrievalSettings(use_tf_saturation=False)
         score, matched_terms, title_matches = score_chunk(
             frozenset({"remote", "days"}),
             frozenset({"remote"}),
-            frozenset({"remote", "days"}),
+            {"remote": 1, "days": 1},
             {"remote": 2.0, "days": 3.0},
+            presence_only,
         )
 
         self.assertEqual(matched_terms, frozenset({"remote", "days"}))
@@ -450,6 +453,46 @@ class RetrievalNormalizationTests(unittest.TestCase):
             score,
             (2.0 * TITLE_MATCH_WEIGHT) + (3.0 * BODY_MATCH_WEIGHT),
         )
+
+    def test_tf_saturation_curve_is_bounded_and_monotonic(self) -> None:
+        settings = RetrievalSettings(use_tf_saturation=True, k_tf=1.0)
+
+        def body_score(term_frequency: int) -> float:
+            score, _, _ = score_chunk(
+                frozenset({"term"}),
+                frozenset(),
+                {"term": term_frequency},
+                {"term": 1.0},
+                settings,
+            )
+            return score
+
+        self.assertEqual(body_score(1), 0.5)  # tf=1 -> 1/(1+1)
+        self.assertEqual(body_score(3), 0.75)  # tf=3 -> 3/(3+1)
+        scores = [body_score(tf) for tf in range(1, 20)]
+        self.assertEqual(scores, sorted(scores))
+        self.assertLess(scores[-1], 1.0)
+
+    def test_repeated_term_outranks_passing_mention(self) -> None:
+        # Same title strength, same matched set: only body frequency differs.
+        settings = RetrievalSettings(use_tf_saturation=True, k_tf=1.0)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "tf.txt"
+            path.write_text(
+                "--- Alpha Guide ---\n"
+                "The widget manual is mentioned once here.\n\n"
+                "--- Beta Guide ---\n"
+                "The widget manual repeats: widget setup, widget care, and "
+                "widget storage.\n",
+                encoding="utf-8",
+            )
+
+            titles = [
+                snippet.splitlines()[0]
+                for snippet in search("widget manual", path, settings=settings)
+            ]
+
+        self.assertEqual(titles[0], "--- Beta Guide ---")
 
     def test_candidate_requires_title_anchor_or_two_matches(self) -> None:
         self.assertTrue(
