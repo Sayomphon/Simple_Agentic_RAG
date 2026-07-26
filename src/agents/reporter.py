@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from src.agents import get_llm
+from src.config import REPORTER_MODEL_NAME
 
 if TYPE_CHECKING:
     from src.graph import PipelineState
@@ -61,7 +62,7 @@ def generator_node(state: PipelineState) -> dict[str, str]:
         return {"report": NOT_FOUND_SENTENCE}
 
     snippets_text = "\n\n".join(state["snippets"])
-    message = get_llm().invoke(
+    message = get_llm(REPORTER_MODEL_NAME).invoke(
         [
             SystemMessage(content=REPORTER_SYSTEM_PROMPT),
             HumanMessage(

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from collections import Counter
@@ -257,6 +260,41 @@ class RetrievalTests(unittest.TestCase):
                 load_knowledge_base(path)
 
             self.assertIn(str(path), str(context.exception))
+
+    def test_default_kb_path_is_independent_of_working_directory(self) -> None:
+        original_cwd = Path.cwd()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            try:
+                os.chdir(temp_dir)
+                chunks = load_knowledge_base()
+                results = search("international travel")
+            finally:
+                os.chdir(original_cwd)
+
+        self.assertEqual(len(chunks), 10)
+        self.assertTrue(results)
+
+    def test_kb_path_env_override_still_works(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            override = Path(temp_dir) / "override.txt"
+            override.write_text(
+                "--- Override Section ---\nOverride body.\n",
+                encoding="utf-8",
+            )
+            script = (
+                "from src.tools.retrieval import load_knowledge_base; "
+                "print(load_knowledge_base()[0].splitlines()[0])"
+            )
+            completed = subprocess.run(
+                [sys.executable, "-c", script],
+                capture_output=True,
+                text=True,
+                cwd=Path(__file__).resolve().parents[1],
+                env={**os.environ, "KB_PATH": str(override)},
+                check=True,
+            )
+
+        self.assertEqual(completed.stdout.strip(), "--- Override Section ---")
 
 
 class RetrievalNormalizationTests(unittest.TestCase):
