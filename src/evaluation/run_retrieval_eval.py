@@ -1,23 +1,28 @@
-"""Offline retrieval evaluation: all ablation variants over all datasets.
+"""Retrieval evaluation: lexical ablations and configured production modes.
 
 Usage:
     python -m src.evaluation.run_retrieval_eval
 
 Writes evaluation_results.md at the project root and exits non-zero when
 the current variant misses its calibration thresholds, so the command can
-serve as a CI gate. Requires no API key and makes no network calls.
+serve as a CI gate. Lexical evaluation is always offline. Semantic and
+hybrid rows run when credentials are available and otherwise report a
+clear skip without weakening the lexical gate.
 """
 
 from __future__ import annotations
 
-import statistics
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from src.evaluation.ablation import build_variants
 from src.evaluation.dataset import EvalCase, load_all
 from src.evaluation.metrics import QueryOutcome, RetrievalMetrics, evaluate
+from src.retrievers.base import Retriever, ScoredChunk
+from src.retrievers.factory import clear_retriever_cache, get_retriever
+from src.retrievers.semantic import MissingEmbeddingCredentialsError
 from src.tools.retrieval import DEFAULT_SETTINGS, RetrievalSettings, search
 
 RESULTS_PATH = Path(__file__).resolve().parents[2] / "evaluation_results.md"
@@ -31,9 +36,25 @@ CALIBRATION_THRESHOLDS = {
     "fp_rate_negative": 0.0,
 }
 
+PRODUCTION_MODES = ("lexical", "semantic", "hybrid")
+
+
+@dataclass(frozen=True)
+class ModeEvaluation:
+    """Metrics, diagnostics, and measured cost for one production mode."""
+
+    metrics: RetrievalMetrics
+    failures: tuple[tuple[EvalCase, tuple[ScoredChunk, ...]], ...]
+    latencies_ms: tuple[float, ...]
+    embedding_api_calls: int
+
 
 def _titles(snippets: list[str]) -> tuple[str, ...]:
     return tuple(snippet.splitlines()[0] for snippet in snippets)
+
+
+def _scored_titles(results: tuple[ScoredChunk, ...]) -> tuple[str, ...]:
+    return tuple(result.chunk.splitlines()[0] for result in results)
 
 
 def _run_variant(
@@ -68,6 +89,106 @@ def _percentile(values: list[float], fraction: float) -> float:
     ordered = sorted(values)
     index = min(len(ordered) - 1, round(fraction * (len(ordered) - 1)))
     return ordered[index]
+
+
+def _run_mode(
+    cases: list[EvalCase],
+    retriever: Retriever,
+) -> ModeEvaluation:
+    """Measure one production retriever over one labeled dataset."""
+    outcomes: list[QueryOutcome] = []
+    failures: list[tuple[EvalCase, tuple[ScoredChunk, ...]]] = []
+    latencies_ms: list[float] = []
+    calls_before = int(getattr(retriever, "embedding_api_calls", 0))
+
+    for case in cases:
+        started = time.perf_counter()
+        results = tuple(retriever.search(case.query))
+        latencies_ms.append((time.perf_counter() - started) * 1000)
+        retrieved = _scored_titles(results)
+        outcomes.append(
+            QueryOutcome(retrieved=retrieved, expected=case.expected_titles)
+        )
+        if retrieved != case.expected_titles:
+            failures.append((case, results))
+
+    calls_after = int(getattr(retriever, "embedding_api_calls", 0))
+    return ModeEvaluation(
+        metrics=evaluate(outcomes),
+        failures=tuple(failures),
+        latencies_ms=tuple(latencies_ms),
+        embedding_api_calls=calls_after - calls_before,
+    )
+
+
+def _mode_section(name: str, cases: list[EvalCase]) -> list[str]:
+    """Render production-mode quality, latency, and provider-call metrics."""
+    lines = [
+        "### Production retrieval modes",
+        "",
+        "| mode | status | exact | P_macro | R_macro | F1 | MRR | "
+        "FP_neg | embedding calls | p50 ms | p95 ms |",
+        "|---|---|---|---|---|---|---|---|---|---:|---:|---:|",
+    ]
+    completed: dict[str, ModeEvaluation] = {}
+    skipped: dict[str, str] = {}
+
+    for mode in PRODUCTION_MODES:
+        retriever = get_retriever(mode)
+        try:
+            result = _run_mode(cases, retriever)
+        except MissingEmbeddingCredentialsError:
+            skipped[mode] = "OPENAI_API_KEY not set"
+            lines.append(
+                f"| {mode} | skipped: missing credentials | n/a | n/a | "
+                "n/a | n/a | n/a | n/a | 0 | n/a | n/a |"
+            )
+            continue
+
+        completed[mode] = result
+        metrics = result.metrics
+        latencies = list(result.latencies_ms)
+        lines.append(
+            f"| {mode} | measured | {_percent(metrics.exact_match)} "
+            f"| {_percent(metrics.precision_macro)} "
+            f"| {_percent(metrics.recall_macro)} "
+            f"| {_ratio(metrics.f1_macro)} "
+            f"| {_ratio(metrics.mrr)} "
+            f"| {_percent(metrics.fp_rate_negative)} "
+            f"| {result.embedding_api_calls} "
+            f"| {_percentile(latencies, 0.50):.2f} "
+            f"| {_percentile(latencies, 0.95):.2f} |"
+        )
+
+    lines.append("")
+    if skipped:
+        modes = ", ".join(f"`{mode}`" for mode in skipped)
+        lines += [
+            f"{modes} skipped because no usable OpenAI API credential was "
+            "available. Lexical metrics and CI gates still completed.",
+            "",
+        ]
+
+    for mode, result in completed.items():
+        if not result.failures:
+            lines += [f"`{mode}` matches every case in {name} exactly.", ""]
+            continue
+        lines += [f"#### `{mode}` mismatches on {name}", ""]
+        for case, retrieved_results in result.failures:
+            lines += [
+                f"- `{case.id}` — query: {case.query!r}",
+                f"  - expected: {list(case.expected_titles)}",
+                f"  - retrieved: {list(_scored_titles(retrieved_results))}",
+            ]
+            if retrieved_results:
+                evidence = ", ".join(
+                    f"{result.chunk.splitlines()[0]}="
+                    f"{result.score:.4f} ({result.method})"
+                    for result in retrieved_results
+                )
+                lines.append(f"  - scores: {evidence}")
+        lines.append("")
+    return lines
 
 
 def _dataset_section(
@@ -136,6 +257,7 @@ def _dataset_section(
 
 
 def main() -> int:
+    clear_retriever_cache()
     variants = build_variants()
     if CURRENT_VARIANT in variants:
         mismatch = variants[CURRENT_VARIANT] != DEFAULT_SETTINGS
@@ -155,12 +277,15 @@ def main() -> int:
         "# Retrieval Evaluation Results",
         "",
         "Generated by `python -m src.evaluation.run_retrieval_eval` "
-        "(offline, deterministic, no API key).",
+        "(lexical is offline and deterministic; semantic/hybrid run only "
+        "when API credentials are available).",
         "",
         "Negative queries (empty expectation) are excluded from "
         "precision/recall/MRR and scored only by the negative "
-        "false-positive rate. Latency varies run to run; every other "
-        "number is reproducible bit for bit.",
+        "false-positive rate. Lexical quality is deterministic. Hosted "
+        "embedding scores, derived semantic metrics, latency, and provider "
+        "conditions may vary slightly between live runs. Embedding-call "
+        "counts reflect cache state for this process.",
         "",
     ]
 
@@ -170,6 +295,7 @@ def main() -> int:
             name, cases, variants
         )
         lines += section_lines
+        lines += _mode_section(name, cases)
         if name == "calibration":
             for metric_name, threshold in CALIBRATION_THRESHOLDS.items():
                 value = getattr(current_metrics, metric_name)

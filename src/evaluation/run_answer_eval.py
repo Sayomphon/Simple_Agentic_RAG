@@ -3,7 +3,7 @@
 Usage:
     RUN_LIVE_LLM_TESTS=1 python -m src.evaluation.run_answer_eval
 
-Runs every labeled query (answer cases + both retrieval fixtures)
+Runs every labeled query (answer cases + original calibration/held-out fixtures)
 through the real graph once and scores the deterministic guardrail and
 answer-quality axes (citations, not-found discipline, provenance,
 baseline coverage, facts, and numbers). The metrics are computed
@@ -97,7 +97,7 @@ def main() -> int:
         NOT_FOUND_SENTENCE,
     )
     from src.config import REPORTER_MODEL_NAME, RETRIEVER_MODEL_NAME
-    from src.evaluation.dataset import load_all
+    from src.evaluation.dataset import load_cases
     from src.graph import build_graph
     from src.tools.retrieval import load_knowledge_base, search
 
@@ -115,8 +115,8 @@ def main() -> int:
             "query": case.query,
             "expect_not_found": case.is_negative,
         }
-        for dataset_name, cases in load_all().items()
-        for case in cases
+        for dataset_name in ("calibration", "heldout")
+        for case in load_cases(dataset_name)
     ]
 
     corpus_chunks = set(load_knowledge_base())

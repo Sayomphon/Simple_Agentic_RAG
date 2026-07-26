@@ -7,7 +7,7 @@
 
 ![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/Orchestration-LangGraph-1C3C3C)
-![Tests](https://img.shields.io/badge/tests-99%20passing%20%7C%204%20live%20skipped-brightgreen)
+![Tests](https://img.shields.io/badge/tests-122%20passing%20%7C%204%20live%20skipped-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 This repository is a deliberately small implementation of the
@@ -39,8 +39,9 @@ audit.
   responsibilities.
 - **Custom local RAG tool:** retrieval reads a plain UTF-8 text file and needs
   no vector database.
-- **Deterministic retrieval:** the same query and knowledge base produce the
-  same ordered snippets.
+- **Measured retrieval modes:** offline lexical search is the deterministic
+  default; opt-in semantic and hybrid modes use cached OpenAI embeddings
+  behind the same tool contract.
 - **Raw evidence handoff:** the Retriever does not summarize or rewrite the
   sections it returns; a mixed question may be split into up to three
   sub-queries, but the handoff always contains at least everything a single
@@ -154,8 +155,19 @@ support. Each section begins with a machine-readable heading:
 Section content...
 ```
 
-The custom tool in `src/tools/retrieval.py` uses a transparent normalized
-weighted lexical pipeline:
+`src/tools/retrieval.py` is a thin, stable agent-facing wrapper. It always
+accepts `query: str` and returns raw `list[str]`, while a factory selects one
+of three internal strategies from `SEARCH_MODE`:
+
+| mode | implementation | network |
+|---|---|---|
+| `lexical` (default) | normalized weighted lexical scoring | offline |
+| `semantic` | `text-embedding-3-small` + cosine + calibrated threshold | OpenAI API |
+| `hybrid` | independently gated lexical/semantic results + RRF (`k=60`) | OpenAI API |
+
+The Data Retriever Agent cannot select or change this mode. That keeps
+latency, cost, and evaluation reproducible. The lexical implementation in
+`src/retrievers/lexical.py` uses this transparent pipeline:
 
 1. read `knowledge_base.txt` as UTF-8 (parsed sections are cached per file
    identity — path, `mtime_ns`, size — so an edited file invalidates
@@ -184,10 +196,9 @@ weighted lexical pipeline:
 14. return every section that passes the relevance gate—there is no fixed
     `TOP_K`.
 
-The constants are calibrated against the 27-case **calibration set** in
+The lexical constants are calibrated against the 27-case **calibration set** in
 `tests/fixtures/retrieval_cases.json` — the numbers on that set are a fit
 statistic, not a generalization estimate. The gate achieves 100% exact-case
-pass, section precision, section recall, and unknown-query rejection on that
 tuning set while remaining fully deterministic; generalization is measured
 separately on a held-out set (see [Evaluation](#evaluation)):
 
@@ -204,8 +215,30 @@ separately on a held-out set (see [Evaluation](#evaluation)):
 | `Can I work remotely?` | Remote Work + Hybrid Work |
 | `What is the CEO's salary?` | No sections |
 
-The tool returns source sections as raw text. It does not ask an LLM to search,
-summarize, enrich, or rank the evidence.
+Semantic mode embeds the 10 raw sections in one batch, stores only numeric
+vectors in `.cache/embeddings/`, and invalidates that cache when either the
+embedding model or byte-relevant chunk content changes. Cache files are JSON
+(never executable pickle), atomically replaced, permission-restricted, size
+bounded, and validated for count, dimension, finite values, and non-zero
+norms. Every query makes one embedding request and performs an in-memory
+linear cosine scan; there is no vector database, ANN index, reranker, query
+rewrite, or silent fallback.
+
+`MIN_COSINE=0.392817` comes from the measured precision-weighted F0.5 sweep in
+[threshold_calibration.md](threshold_calibration.md). The positive and
+hard-negative distributions overlap, so no global threshold can provide both
+zero false positives and useful recall: the selected boundary yields 87.5%
+pair precision and 92.1% pair recall on the calibration pairs. The zero-FP
+boundary would reject all 38 measured positive pairs and is therefore
+reported, not deployed.
+
+Hybrid mode gates each side before fusion, uses rank-only Reciprocal Rank
+Fusion because lexical and cosine scores have incompatible scales, and
+deduplicates exact raw chunks. It is recall-oriented: measured held-out recall
+is 100%, but it inherits lexical false positives.
+
+The tool returns source sections as raw text. It never asks an LLM to search,
+summarize, enrich, rerank, or rewrite the evidence.
 
 ## Technology stack
 
@@ -214,7 +247,7 @@ summarize, enrich, or rank the evidence.
 | Runtime | Python 3.11 | Application and tests |
 | Orchestration | LangGraph | Fixed two-node workflow and shared state |
 | Agent/tool primitives | LangChain Core | Messages, tool schema, and invocation |
-| LLM integration | LangChain OpenAI | `ChatOpenAI` client and tool binding |
+| OpenAI integration | LangChain OpenAI | `ChatOpenAI` agents and `OpenAIEmbeddings` semantic mode |
 | Configuration | python-dotenv | Local environment configuration |
 | Knowledge store | UTF-8 text file | Small, inspectable evidence source |
 | Web UI | HTML, CSS, vanilla JS | Dependency-free stage-by-stage demo front end |
@@ -237,28 +270,39 @@ summarize, enrich, or rank the evidence.
 │   └── ui_01_empty.png … ui_07_dark.png  # web UI states
 ├── docs/
 │   └── DESIGN_NOTES.md           # engineering rationale and trade-offs
-├── evaluation_results.md         # generated by the offline retrieval eval
+├── evaluation_results.md         # generated multi-mode retrieval metrics
+├── threshold_calibration.md      # cosine-threshold provenance and trade-offs
 ├── answer_eval_results.md        # generated by the opt-in live answer eval
 ├── src/
-│   ├── config.py                 # models, timeouts, and KB path
+│   ├── config.py                 # models, retrieval mode, thresholds, paths
 │   ├── graph.py                  # PipelineState and LangGraph wiring
 │   ├── agents/
 │   │   ├── __init__.py           # per-model ChatOpenAI construction
 │   │   ├── retriever.py          # Data Retriever node
 │   │   └── reporter.py           # Report Generator node
 │   ├── evaluation/
+│   │   ├── calibrate_threshold.py # semantic threshold measurement
 │   │   ├── dataset.py            # shared fixture loader
 │   │   ├── metrics.py            # pure set-based retrieval metrics
 │   │   ├── ablation.py           # V0..V5 scoring-layer ladder
-│   │   ├── run_retrieval_eval.py # offline eval runner / CI gate
+│   │   ├── run_retrieval_eval.py # lexical + semantic + hybrid evaluation
 │   │   └── run_answer_eval.py    # opt-in live answer eval runner
+│   ├── retrievers/
+│   │   ├── base.py               # Retriever protocol and scored result
+│   │   ├── lexical.py            # measured offline implementation
+│   │   ├── semantic.py           # embeddings, cosine, validated disk cache
+│   │   ├── hybrid.py             # gate-first reciprocal-rank fusion
+│   │   └── factory.py            # lazy configuration-owned strategy factory
 │   └── tools/
-│       └── retrieval.py          # parsing, scoring, and custom tool
+│       └── retrieval.py          # thin custom tool + compatibility exports
 ├── tests/
 │   ├── fixtures/
 │   │   ├── retrieval_cases.json    # 27-case calibration set (tuning set)
 │   │   ├── retrieval_heldout.json  # 14-case held-out set (never tuned on)
+│   │   ├── retrieval_negatives.json # 12 intentional hard negatives
 │   │   └── answer_cases.json       # answer-quality facts and citations
+│   ├── test_assignment_invariants.py # assignment architecture guards
+│   ├── test_retrievers.py        # semantic, hybrid, cache, and factory tests
 │   ├── test_retrieval.py         # retrieval, stemming, and cache tests
 │   ├── test_evaluation.py        # dataset loader and metric tests
 │   ├── test_graph.py             # agent behavior and graph handoff
@@ -302,6 +346,11 @@ OPENAI_API_KEY=your_api_key_here
 MODEL_NAME=gpt-5-mini
 TEMPERATURE=0
 KB_PATH=knowledge_base.txt
+SEARCH_MODE=lexical
+EMBEDDING_MODEL_NAME=text-embedding-3-small
+MIN_COSINE=0.392817
+RRF_K=60
+EMBED_CACHE_DIR=.cache/embeddings
 LLM_TIMEOUT_SECONDS=30
 LLM_MAX_RETRIES=2
 RUN_LIVE_LLM_TESTS=0
@@ -318,6 +367,11 @@ LIVE_LLM_TEST_MODEL=gpt-5-mini
 | `LLM_TIMEOUT_SECONDS` | No | `30` | Per-request provider timeout so the CLI cannot hang |
 | `LLM_MAX_RETRIES` | No | `2` | Bounded retry budget for transient provider errors |
 | `KB_PATH` | No | `knowledge_base.txt` | Path to the knowledge base; a relative value is anchored to the project root |
+| `SEARCH_MODE` | No | `lexical` | `lexical`, `semantic`, or `hybrid`; configuration-owned, never chosen by the LLM |
+| `EMBEDDING_MODEL_NAME` | No | `text-embedding-3-small` | Embedding model for semantic and hybrid modes |
+| `MIN_COSINE` | No | `0.392817` | Measured semantic gate; see `threshold_calibration.md` before changing |
+| `RRF_K` | No | `60` | Rank-fusion constant used only by hybrid mode |
+| `EMBED_CACHE_DIR` | No | `.cache/embeddings` | Ignored local cache for validated document vectors |
 | `RUN_LIVE_LLM_TESTS` | No | `0` | Set to `1` only when explicitly running live provider tests |
 | `LIVE_LLM_TEST_MODEL` | No | `gpt-5-mini` | Model used by the opt-in integration tests |
 
@@ -395,7 +449,7 @@ Run the complete default suite:
 python -m unittest discover -v
 ```
 
-The default run discovers **103 tests**: **99 pass offline** and the **4 live
+The default run discovers **126 tests**: **122 pass offline** and the **4 live
 tests are skipped**. It covers:
 
 - knowledge-base loading, section splitting, and parse-cache invalidation;
@@ -407,6 +461,15 @@ tests are skipped**. It covers:
   rejection) via the shared evaluation metrics;
 - dataset-loader schema validation and hand-computed metric tests;
 - the ablation ladder's equivalence with production settings;
+- exact two-agent/sequential-graph assignment invariants and the unchanged
+  `query: str -> list[str]` tool contract;
+- semantic cosine validation, threshold gating, byte-exact raw chunk mapping,
+  missing-credential failure semantics, and document-cache reuse,
+  invalidation, corruption recovery, and file permissions;
+- hybrid gate-first RRF behavior, one-sided results, and exact deduplication;
+- lazy per-mode factory caching and unsupported-mode rejection;
+- hard-negative dataset validation and deterministic threshold-selection
+  tests for both clean-gap and overlapping distributions;
 - Retriever tool-call contract enforcement (1–3 calls, tool name,
   non-empty sub-queries) and the baseline-union superset guarantee;
 - query validation (empty / whitespace / over-length) with no LLM call;
@@ -423,12 +486,30 @@ tests are skipped**. It covers:
 The suite uses mocks at the LLM boundary, so it needs no API key and makes no
 network requests. The live tests remain skipped unless explicitly enabled.
 
-Run the offline evaluation (also usable as a CI gate — it exits non-zero if
-the current variant misses its calibration thresholds):
+Run every production mode when an API key is available:
 
 ```bash
 python -m src.evaluation.run_retrieval_eval
 ```
+
+Force the offline lexical-only evaluation (also usable as a CI gate — it
+exits non-zero if the current lexical variant misses its calibration
+thresholds):
+
+```bash
+OPENAI_API_KEY= python -m src.evaluation.run_retrieval_eval
+```
+
+Recalibrate the semantic threshold only after intentionally changing the
+embedding model, knowledge base, or labeled calibration sets:
+
+```bash
+python -m src.evaluation.calibrate_threshold
+```
+
+Both API-backed commands send the fictional knowledge-base sections and
+evaluation queries to the configured embedding provider. Use them only with
+approved data egress and a project-scoped key.
 
 ### Opt-in live LLM integration
 
@@ -479,22 +560,25 @@ artifacts.
 ## Evaluation
 
 Retrieval and answer quality are measured by code in this repository, not by
-hand-checked examples. Both runners are reproducible:
+hand-checked examples. Lexical metrics are deterministic; hosted embeddings
+can show small floating-point variation between live runs:
 
 ```bash
-python -m src.evaluation.run_retrieval_eval          # offline, no API key
+python -m src.evaluation.run_retrieval_eval          # all available modes
+OPENAI_API_KEY= python -m src.evaluation.run_retrieval_eval  # lexical only
 RUN_LIVE_LLM_TESTS=1 python -m src.evaluation.run_answer_eval
 ```
 
 ### Datasets
 
-Two labeled retrieval sets plus one answer-quality set, all in
+Three labeled retrieval sets plus one answer-quality set, all in
 `tests/fixtures/`:
 
 | Set | n | Purpose |
 |---|---|---|
 | calibration | 27 | The set every scoring constant was tuned against (including the stemmer rules and the added `morphology` cases). Numbers here are a fit statistic, not a generalization estimate. |
 | held-out | 14 | Written from `knowledge_base.txt` alone after the retrieval implementation was frozen, committed before the evaluator ever ran against it, and never edited to flatter a result. |
+| hard negatives | 12 | Intentional near-misses used to calibrate semantic threshold discipline. This is a calibration set, not held-out evidence. |
 | answer cases | 12 | Required/forbidden facts and allowed citations per query, written from the knowledge base and committed before the first answer-eval run. |
 
 Because the retriever returns a threshold-gated set rather than a fixed-size
@@ -505,17 +589,30 @@ false-positive rate.
 
 ### Retrieval results
 
-| set | exact_match | precision_macro | recall_macro | F1 | MRR | FP_rate (neg) |
-|---|---|---|---|---|---|---|
-| calibration (27) | 100.0% | 100.0% | 100.0% | 1.000 | 1.000 | 0.0% |
-| held-out (14) | 57.1% | 77.3% | 72.7% | 0.749 | 0.818 | 66.7% |
+| set | mode | exact | P_macro | R_macro | F1 | MRR | FP_neg |
+|---|---|---:|---:|---:|---:|---:|---:|
+| calibration (27) | lexical | 100.0% | 100.0% | 100.0% | 1.000 | 1.000 | 0.0% |
+| calibration (27) | semantic | 51.9% | 79.2% | 89.6% | 0.841 | 0.917 | 33.3% |
+| calibration (27) | hybrid | 70.4% | 87.5% | 100.0% | 0.933 | 1.000 | 33.3% |
+| held-out (14) | lexical | 57.1% | 77.3% | 72.7% | 0.749 | 0.818 | 66.7% |
+| held-out (14) | semantic | 42.9% | 72.7% | 90.9% | 0.808 | 0.909 | 33.3% |
+| held-out (14) | hybrid | 42.9% | 75.8% | 100.0% | 0.862 | 0.955 | 66.7% |
+| hard negatives (12) | lexical | 8.3% | n/a | n/a | n/a | n/a | 91.7% |
+| hard negatives (12) | semantic | 58.3% | n/a | n/a | n/a | n/a | 41.7% |
+| hard negatives (12) | hybrid | 8.3% | n/a | n/a | n/a | n/a | 91.7% |
 
-The held-out gap is expected and honest: unseen synonyms are out of scope
-for a curated lexical system, and two of the three held-out negatives
-deliberately contain corpus vocabulary (`parental leave`,
-`TigerLink VPN password`) to make the false-positive rate hard to pass.
-A local search takes well under a millisecond (p50 ≈ 0.02–0.6 ms depending
-on cache warmth); end-to-end latency is dominated by the LLM calls.
+These modes optimize different outcomes. Lexical remains the strongest exact
+fit on its calibration set and the only offline path. Semantic raises held-out
+recall from 72.7% to 90.9% and halves held-out negative FP from 66.7% to
+33.3%, but over-retrieves related sections and therefore has lower exact
+match. Hybrid reaches 100% held-out recall but inherits lexical false
+positives because RRF can reorder admitted candidates, not remove a candidate
+that already passed either source gate.
+
+Lexical retrieval stays below a millisecond. In the recorded live run,
+semantic/hybrid query embedding p50 was roughly 470–560 ms depending on
+mode and dataset; cache state and provider conditions affect latency and
+document-embedding call counts.
 
 ### What each design decision buys
 
@@ -558,12 +655,14 @@ Full per-variant tables, per-case mismatches, and run metadata are in
 [evaluation_results.md](evaluation_results.md) and
 [answer_eval_results.md](answer_eval_results.md).
 
-**Evaluation limitations:** both retrieval sets are small (n = 27 and
-n = 14) over a 10-section corpus, so a single case moves a percentage by
-several points. The held-out set is written by the same author as the
-knowledge base. Answer metrics come from one run per case of a
-probabilistic model. No LLM-as-judge axis is reported — semantic
-faithfulness beyond citation validity is not measured.
+**Evaluation limitations:** all retrieval sets are small (n = 27, 14, and
+12) over a 10-section corpus, so a single case moves a percentage by several
+points. The held-out set is written by the same author as the knowledge base.
+Hard negatives are used for calibration and must not be presented as
+generalization evidence. Hosted embedding scores can vary slightly between
+runs. Answer metrics come from one run per case of a probabilistic model. No
+LLM-as-judge axis is reported — semantic faithfulness beyond citation
+validity is not measured.
 
 ## Example results
 
@@ -659,7 +758,7 @@ first and unions in the sub-query results — the handoff is provably a
 superset of the deterministic single-search baseline, so a bad
 decomposition can never lose recall, only add evidence.
 
-**Why normalized weighted lexical retrieval.** For a 10-section assignment
+**Why normalized weighted lexical retrieval is the default.** For a 10-section assignment
 corpus, reviewed phrase/token aliases plus a light inflectional stemmer and
 IDF-weighted title/body matching are easier to explain, audit, and test
 than an embedding index. The relative relevance gate tolerates
@@ -667,6 +766,15 @@ natural-language filler without letting a broad one-term match overwhelm a
 focused section. The thresholds, aliases, and stemmer rules are versioned
 with the calibration set instead of being tuned from one example, and every
 layer's contribution is measured in the ablation table above.
+
+**Why semantic and hybrid remain optional.** Semantic search measurably
+improves held-out recall and negative discipline for unseen language, but it
+adds provider cost and roughly half a second of query-embedding latency.
+Calibration also proves that relevant and near-miss cosine distributions
+overlap. Hybrid uses gate-first RRF rather than combining incomparable raw
+scores; it maximizes recall but cannot undo false positives admitted by
+either side. Keeping lexical as the offline default makes those trade-offs
+explicit instead of silently changing runtime behavior.
 
 **Why raw state handoff.** Keeping source sections unchanged makes it possible
 to compare the Generator's input directly with `knowledge_base.txt`. This
@@ -691,30 +799,34 @@ reviewer's Python 3.11 environment.
 This repository intentionally optimizes for clarity and assignment alignment,
 not production scale.
 
-- **Curated lexical semantics only:** unseen synonyms and conceptual
-  similarity are not understood — measured directly: held-out exact match
-  is 57.1% versus 100% on the calibration set, with misses like
-  "how fast do you reply" never reaching the support sections.
+- **Modes optimize different metrics:** lexical held-out exact match is
+  57.1% and misses unseen paraphrases; semantic recovers examples such as
+  "how fast do you reply" and reaches 90.9% held-out recall, but its exact
+  match is 42.9% because related sections also pass the global threshold.
 - **Inflectional stemming only:** the light stemmer covers
   `-s`/`-es`/`-ies`/`-ed`/`-ing` (held-out `unseen_inflection` cases pass),
   but derivational forms still need reviewed aliases, and stemming can
   bypass the surface-form generic-term filter — on the held-out set,
   `card processing rates` wrongly retrieves "…Process" sections because
   `processing` stems to the filtered word `process` after filtering.
-- **Hard negatives leak:** two of three held-out negatives that
-  intentionally contain corpus vocabulary (`parental leave`,
-  `TigerLink VPN password`) retrieve a plausible-but-wrong section
-  (66.7% FP rate on that small negative set); the Report Generator's
-  insufficient-evidence guardrail then produced the correct not-found
-  answer in the live answer eval, but that second layer is probabilistic.
-- **English query terms:** effective retrieval requires specific English terms
+- **Hard negatives leak:** the 12-case near-miss calibration set measures
+  FP at 91.7% lexical, 41.7% semantic, and 91.7% hybrid. A zero-FP semantic
+  threshold would reject all 38 measured positive pairs, so the selected
+  F0.5 boundary deliberately accepts five difficult near-misses. Domain or
+  metadata constraints would be required to separate cases such as domestic
+  versus international travel.
+- **English lexical terms:** lexical mode requires specific English terms
   present in the knowledge base, its reviewed alias vocabulary, or a
-  stemmable inflection of them.
+  stemmable inflection. Cross-language behavior is not measured yet.
 - **Heuristic relevance gate:** the `1.5` title weight and `0.60` relative
   cutoff pass the 27-case calibration set but require recalibration against
   representative production traffic.
 - **Small local corpus:** a linear scan is appropriate for 10 sections, not
   hundreds of thousands of documents.
+- **Provider-bound semantic mode:** semantic and hybrid searches require
+  approved data egress, an API key, provider quota, and roughly 0.5 seconds
+  per query embedding in the recorded run. They fail loudly and never fall
+  back silently to lexical.
 - **Citation-level grounding only:** invented citations fail loudly at
   runtime and the answer eval checks facts and numbers against the handed-off
   evidence, but there is no per-claim semantic faithfulness check.

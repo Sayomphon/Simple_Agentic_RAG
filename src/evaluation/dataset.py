@@ -15,6 +15,7 @@ FIXTURES_DIR = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
 DATASET_FILES: dict[str, str] = {
     "calibration": "retrieval_cases.json",
     "heldout": "retrieval_heldout.json",
+    "negatives": "retrieval_negatives.json",
 }
 
 
@@ -83,7 +84,7 @@ def _parse_case(raw_case: object, source: str) -> EvalCase:
 
 
 def load_cases(name: str) -> list[EvalCase]:
-    """Load and validate one named dataset ("calibration" or "heldout")."""
+    """Load and validate one named retrieval dataset."""
     try:
         fixture_path = FIXTURES_DIR / DATASET_FILES[name]
     except KeyError:
