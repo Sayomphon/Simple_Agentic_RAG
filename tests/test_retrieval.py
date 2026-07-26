@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import tempfile
 import unittest
 from collections import Counter
 from pathlib import Path
 
+from src.evaluation.dataset import load_cases
+from src.evaluation.metrics import QueryOutcome, evaluate
 from src.tools.retrieval import (
     BODY_MATCH_WEIGHT,
     KnowledgeBaseFormatError,
@@ -25,11 +26,6 @@ from src.tools.retrieval import (
 
 def _titles(snippets: list[str]) -> list[str]:
     return [snippet.splitlines()[0] for snippet in snippets]
-
-
-def _load_retrieval_cases() -> list[dict[str, object]]:
-    fixture_path = Path(__file__).parent / "fixtures" / "retrieval_cases.json"
-    return json.loads(fixture_path.read_text(encoding="utf-8"))
 
 
 class RetrievalTests(unittest.TestCase):
@@ -364,18 +360,11 @@ class RetrievalNormalizationTests(unittest.TestCase):
 
 
 class RetrievalEvaluationTests(unittest.TestCase):
-    def test_golden_retrieval_cases_and_metrics(self) -> None:
-        cases = _load_retrieval_cases()
+    def test_calibration_retrieval_cases_and_metrics(self) -> None:
+        cases = load_cases("calibration")
         self.assertGreaterEqual(len(cases), 20)
-        self.assertEqual(
-            len({str(case["id"]) for case in cases}),
-            len(cases),
-        )
 
-        category_counts = Counter(
-            str(case["category"])
-            for case in cases
-        )
+        category_counts = Counter(case.category for case in cases)
         minimum_category_counts = {
             "existing_regression": 7,
             "natural_paraphrase": 6,
@@ -386,47 +375,26 @@ class RetrievalEvaluationTests(unittest.TestCase):
         for category, minimum in minimum_category_counts.items():
             self.assertGreaterEqual(category_counts[category], minimum)
 
-        retrieved_relevant = 0
-        retrieved_total = 0
-        expected_total = 0
-        exact_passes = 0
-        rejected_unknown = 0
-        unknown_total = 0
-
+        outcomes: list[QueryOutcome] = []
         for case in cases:
-            case_id = str(case["id"])
-            query = str(case["query"])
-            expected_titles = list(case["expected_titles"])
-            forbidden_titles = list(case["forbidden_titles"])
-
-            with self.subTest(case_id=case_id):
-                titles = _titles(search(query))
-                self.assertEqual(titles, expected_titles)
-                for forbidden_title in forbidden_titles:
+            with self.subTest(case_id=case.id):
+                titles = _titles(search(case.query))
+                self.assertEqual(tuple(titles), case.expected_titles)
+                for forbidden_title in case.forbidden_titles:
                     self.assertNotIn(forbidden_title, titles)
 
-            exact_passes += titles == expected_titles
-            expected_set = set(expected_titles)
-            retrieved_relevant += sum(
-                title in expected_set
-                for title in titles
+            outcomes.append(
+                QueryOutcome(
+                    retrieved=tuple(titles),
+                    expected=case.expected_titles,
+                )
             )
-            retrieved_total += len(titles)
-            expected_total += len(expected_titles)
 
-            if not expected_titles:
-                unknown_total += 1
-                rejected_unknown += not titles
-
-        exact_pass_rate = exact_passes / len(cases)
-        precision = retrieved_relevant / retrieved_total
-        recall = retrieved_relevant / expected_total
-        unknown_rejection_rate = rejected_unknown / unknown_total
-
-        self.assertEqual(exact_pass_rate, 1.0)
-        self.assertGreaterEqual(precision, 0.95)
-        self.assertGreaterEqual(recall, 0.95)
-        self.assertEqual(unknown_rejection_rate, 1.0)
+        metrics = evaluate(outcomes)
+        self.assertEqual(metrics.exact_match, 1.0)
+        self.assertGreaterEqual(metrics.precision_micro, 0.95)
+        self.assertGreaterEqual(metrics.recall_micro, 0.95)
+        self.assertEqual(metrics.fp_rate_negative, 0.0)
 
 
 if __name__ == "__main__":
