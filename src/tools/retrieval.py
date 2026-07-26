@@ -7,6 +7,7 @@ import re
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 from langchain_core.tools import tool
@@ -383,15 +384,18 @@ def is_candidate(
     return bool(title_matches) or len(matched_terms) >= 2
 
 
-def load_knowledge_base(path: str | Path | None = None) -> list[str]:
-    """Read a section-formatted text file and return its raw chunks.
+@dataclass(frozen=True, eq=False)
+class ParsedSection:
+    """One knowledge-base section with its normalized match structures."""
 
-    Each section must begin with ``--- Section title ---``. The returned
-    strings preserve the title header and body exactly apart from surrounding
-    whitespace, making the tool output an auditable slice of the source file.
-    """
-    kb_path = Path(path if path is not None else KB_PATH)
-    text = kb_path.read_text(encoding="utf-8")
+    chunk: str
+    title_terms: frozenset[str]
+    body_counts: Counter[str]
+    all_terms: frozenset[str]
+
+
+def _split_sections(text: str, kb_path: Path) -> tuple[str, ...]:
+    """Split file text into raw section chunks, enforcing the format contract."""
     if not text.strip():
         raise KnowledgeBaseFormatError(f"Knowledge base is empty: {kb_path}")
 
@@ -411,9 +415,59 @@ def load_knowledge_base(path: str | Path | None = None) -> list[str]:
                 f"Knowledge base section has no body ({title!r}): {kb_path}"
             )
 
-        chunk = text[match.start() : end].strip()
-        chunks.append(chunk)
-    return chunks
+        chunks.append(text[match.start() : end].strip())
+    return tuple(chunks)
+
+
+# The (mtime_ns, size) cache key invalidates whenever the file changes;
+# nanosecond mtime resolution on modern filesystems makes a same-key
+# rewrite vanishingly unlikely. Exceptions are never cached by lru_cache,
+# so a malformed file keeps failing loudly on every call.
+@lru_cache(maxsize=8)
+def _cached_chunks(
+    path_str: str,
+    mtime_ns: int,
+    size: int,
+) -> tuple[str, ...]:
+    kb_path = Path(path_str)
+    return _split_sections(kb_path.read_text(encoding="utf-8"), kb_path)
+
+
+@lru_cache(maxsize=32)
+def _cached_parsed_sections(
+    path_str: str,
+    mtime_ns: int,
+    size: int,
+    settings: RetrievalSettings,
+) -> tuple[ParsedSection, ...]:
+    sections = []
+    for chunk in _cached_chunks(path_str, mtime_ns, size):
+        title, _, body = chunk.partition("\n")
+        title_terms = normalized_tokens(title, is_query=False, settings=settings)
+        body_counts = normalized_token_counts(
+            body, is_query=False, settings=settings
+        )
+        sections.append(
+            ParsedSection(
+                chunk=chunk,
+                title_terms=title_terms,
+                body_counts=body_counts,
+                all_terms=title_terms | frozenset(body_counts),
+            )
+        )
+    return tuple(sections)
+
+
+def load_knowledge_base(path: str | Path | None = None) -> list[str]:
+    """Read a section-formatted text file and return its raw chunks.
+
+    Each section must begin with ``--- Section title ---``. The returned
+    strings preserve the title header and body exactly apart from surrounding
+    whitespace, making the tool output an auditable slice of the source file.
+    """
+    kb_path = Path(path if path is not None else KB_PATH)
+    stat = kb_path.stat()  # FileNotFoundError propagates unchanged.
+    return list(_cached_chunks(str(kb_path), stat.st_mtime_ns, stat.st_size))
 
 
 def search(
@@ -423,24 +477,17 @@ def search(
     settings: RetrievalSettings = DEFAULT_SETTINGS,
 ) -> list[str]:
     """Return normalized lexical matches in deterministic relevance order."""
-    chunks = load_knowledge_base(path)
+    kb_path = Path(path if path is not None else KB_PATH)
+    stat = kb_path.stat()  # FileNotFoundError propagates unchanged.
+    sections = _cached_parsed_sections(
+        str(kb_path), stat.st_mtime_ns, stat.st_size, settings
+    )
+
     query_terms = normalized_tokens(query, is_query=True, settings=settings)
     if not query_terms:
         return []
 
-    parsed_chunks: list[
-        tuple[int, str, frozenset[str], Counter[str]]
-    ] = []
-    document_terms: list[frozenset[str]] = []
-    for index, chunk in enumerate(chunks):
-        title, _, body = chunk.partition("\n")
-        title_terms = normalized_tokens(title, is_query=False, settings=settings)
-        body_counts = normalized_token_counts(
-            body, is_query=False, settings=settings
-        )
-        parsed_chunks.append((index, chunk, title_terms, body_counts))
-        document_terms.append(title_terms | frozenset(body_counts))
-
+    document_terms = [section.all_terms for section in sections]
     idf_by_term = {
         term: (
             inverse_document_frequency(term, document_terms)
@@ -451,11 +498,11 @@ def search(
     }
 
     candidates: list[ScoredChunk] = []
-    for index, chunk, title_terms, body_counts in parsed_chunks:
+    for index, section in enumerate(sections):
         score, matched_terms, title_matches = score_chunk(
             query_terms,
-            title_terms,
-            body_counts,
+            section.title_terms,
+            section.body_counts,
             idf_by_term,
             settings,
         )
@@ -468,7 +515,7 @@ def search(
         candidates.append(
             ScoredChunk(
                 index=index,
-                chunk=chunk,
+                chunk=section.chunk,
                 matched_terms=matched_terms,
                 title_matches=title_matches,
                 score=score,

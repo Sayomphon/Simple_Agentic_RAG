@@ -302,6 +302,53 @@ class RetrievalTests(unittest.TestCase):
         self.assertEqual(completed.stdout.strip(), "--- Override Section ---")
 
 
+class ParseCacheTests(unittest.TestCase):
+    """The (path, mtime_ns, size) cache key must never serve stale content."""
+
+    def test_rewritten_file_is_reparsed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "kb.txt"
+            path.write_text(
+                "--- First Topic ---\nAlpha widget facts.\n",
+                encoding="utf-8",
+            )
+            before = search("alpha widget", path)
+
+            path.write_text(
+                "--- Second Topic ---\nBeta widget facts, now longer.\n",
+                encoding="utf-8",
+            )
+            after = search("beta widget", path)
+            stale = search("alpha widget", path)
+
+        self.assertTrue(before[0].startswith("--- First Topic ---"))
+        self.assertTrue(after[0].startswith("--- Second Topic ---"))
+        self.assertEqual(stale, [])
+
+    def test_distinct_paths_do_not_share_cache_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            first = Path(temp_dir) / "first.txt"
+            second = Path(temp_dir) / "second.txt"
+            first.write_text(
+                "--- Cats Guide ---\nCats sleep often.\n", encoding="utf-8"
+            )
+            second.write_text(
+                "--- Dogs Guide ---\nDogs bark loudly.\n", encoding="utf-8"
+            )
+
+            self.assertEqual(
+                load_knowledge_base(first),
+                ["--- Cats Guide ---\nCats sleep often."],
+            )
+            self.assertEqual(
+                load_knowledge_base(second),
+                ["--- Dogs Guide ---\nDogs bark loudly."],
+            )
+
+    def test_repeated_loads_return_equal_chunks(self) -> None:
+        self.assertEqual(load_knowledge_base(), load_knowledge_base())
+
+
 class StemmerTests(unittest.TestCase):
     def test_inflectional_suffixes_reach_shared_canonical_forms(self) -> None:
         cases = {
