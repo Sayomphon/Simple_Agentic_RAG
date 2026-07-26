@@ -34,10 +34,13 @@ TOKEN_ALIASES: dict[str, str] = {
     "escalate": "escalation",
     "escalated": "escalation",
     "escalates": "escalation",
+    "escalating": "escalation",
     "lodging": "hotel",
     "methods": "method",
     "overseas": "international",
+    "reimburse": "reimbursement",
     "reimbursed": "reimbursement",
+    "reimbursing": "reimbursement",
     "remotely": "remote",
     "staff": "employee",
     "submitted": "submit",
@@ -183,6 +186,55 @@ def tokenize(text: str) -> set[str]:
     return set(TOKEN_PATTERN.findall(text.lower()))
 
 
+def _undouble(token: str) -> str:
+    """Drop one trailing doubled consonant (submitt -> submit), keeping
+    legitimate ll/ss endings (fall, miss)."""
+    if (
+        len(token) >= 2
+        and token[-1] == token[-2]
+        and token[-1] not in ("l", "s")
+    ):
+        return token[:-1]
+    return token
+
+
+def _stem_once(token: str) -> str:
+    """Apply one pass of plural, verbal-suffix, and final-e rules."""
+    if len(token) < 4:
+        return token  # us, is, its — too short to strip safely
+
+    if token.endswith("ies") and len(token) >= 5:
+        token = token[:-3] + "y"  # policies -> policy
+    elif token.endswith("sses"):
+        token = token[:-2]  # processes -> process
+    elif token.endswith("s") and not token.endswith(("ss", "us", "is")):
+        token = token[:-1]  # fees -> fee, meetings -> meeting
+
+    if token.endswith("ing") and len(token) >= 6:
+        token = _undouble(token[:-3])  # booking -> book, meeting -> meet
+    elif token.endswith("ed") and len(token) >= 5:
+        token = _undouble(token[:-2])  # submitted -> submit
+
+    if token.endswith("e") and len(token) >= 5:
+        token = token[:-1]  # approve -> approv, matching approved
+    return token
+
+
+def stem(token: str) -> str:
+    """Light inflectional stemmer: -s/-es/-ies/-ed/-ing + final-e elision.
+
+    Runs the single-pass rules to a fixpoint so stemming is idempotent —
+    e.g. ``expenses -> expens`` directly rather than via an intermediate
+    ``expense`` that a second call would shorten further. Derivational
+    forms and synonyms remain the alias tables' responsibility.
+    """
+    while True:
+        stemmed = _stem_once(token)
+        if stemmed == token:
+            return token
+        token = stemmed
+
+
 def normalize_phrases(text: str) -> str:
     """Replace reviewed multi-word concepts while preserving word boundaries."""
     normalized = text.lower()
@@ -196,7 +248,13 @@ def normalize_phrases(text: str) -> str:
 
 
 def normalized_tokens(text: str, *, is_query: bool) -> frozenset[str]:
-    """Return canonical tokens for query or document-side matching."""
+    """Return canonical tokens for query or document-side matching.
+
+    Order matters: reviewed aliases win over the automatic stemmer, and
+    the filter sets are defined on surface forms, so both apply before
+    stemming. Query and document sides share the same final stem step,
+    which keeps their canonical spaces aligned by construction.
+    """
     phrase_normalized = normalize_phrases(text)
     raw_tokens = TOKEN_PATTERN.findall(phrase_normalized)
     canonical = {
@@ -209,7 +267,7 @@ def normalized_tokens(text: str, *, is_query: bool) -> frozenset[str]:
         canonical -= DOMAIN_GENERIC_TERMS
         canonical -= QUERY_FRAMING_TERMS
 
-    return frozenset(canonical)
+    return frozenset(stem(token) for token in canonical)
 
 
 def discriminative_terms(query: str) -> set[str]:
@@ -404,5 +462,6 @@ __all__ = [
     "search",
     "search_knowledge_base",
     "score_chunk",
+    "stem",
     "tokenize",
 ]

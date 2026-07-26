@@ -225,6 +225,55 @@
     "forbidden_titles": []
   },
   {
+    "id": "morph_card_fees",
+    "category": "morphology",
+    "query": "What are the card fees?",
+    "expected_titles": [
+      "--- PaySiam Gateway Product Overview ---"
+    ],
+    "forbidden_titles": [
+      "--- International Travel Approval Process ---",
+      "--- International Travel Daily Allowance ---",
+      "--- International Travel Insurance ---"
+    ]
+  },
+  {
+    "id": "morph_reimbursing_hotel",
+    "category": "morphology",
+    "query": "reimbursing hotel receipts",
+    "expected_titles": [
+      "--- Expense Reimbursement ---",
+      "--- International Travel Daily Allowance ---"
+    ],
+    "forbidden_titles": [
+      "--- International Travel Insurance ---"
+    ]
+  },
+  {
+    "id": "morph_escalating_p1",
+    "category": "morphology",
+    "query": "escalating a P1 outage",
+    "expected_titles": [
+      "--- Support Escalation Process ---",
+      "--- Customer Support Service Levels ---"
+    ],
+    "forbidden_titles": []
+  },
+  {
+    "id": "morph_submitted_receipts",
+    "category": "morphology",
+    "query": "submitted expense receipts",
+    "expected_titles": [
+      "--- Expense Reimbursement ---",
+      "--- International Travel Daily Allowance ---"
+    ],
+    "forbidden_titles": [
+      "--- Annual Leave ---",
+      "--- Remote Work Policy ---",
+      "--- International Travel Approval Process ---"
+    ]
+  },
+  {
     "id": "unknown_salary",
     "category": "unknown_or_generic",
     "query": "What is the CEO's salary?",

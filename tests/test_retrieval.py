@@ -15,7 +15,9 @@ from src.evaluation.metrics import QueryOutcome, evaluate
 from src.tools.retrieval import (
     BODY_MATCH_WEIGHT,
     KnowledgeBaseFormatError,
+    STOPWORDS,
     TITLE_MATCH_WEIGHT,
+    TOKEN_ALIASES,
     inverse_document_frequency,
     is_candidate,
     load_knowledge_base,
@@ -24,6 +26,8 @@ from src.tools.retrieval import (
     search,
     search_knowledge_base,
     score_chunk,
+    stem,
+    tokenize,
 )
 
 
@@ -297,12 +301,71 @@ class RetrievalTests(unittest.TestCase):
         self.assertEqual(completed.stdout.strip(), "--- Override Section ---")
 
 
+class StemmerTests(unittest.TestCase):
+    def test_inflectional_suffixes_reach_shared_canonical_forms(self) -> None:
+        cases = {
+            # plural
+            "fees": "fee",
+            "caps": "cap",
+            "policies": "policy",
+            "processes": "process",
+            "bookings": "book",
+            "meetings": "meet",
+            # -ing / -ed with undoubling
+            "booking": "book",
+            "submitting": "submit",
+            "submitted": "submit",
+            # base and inflected forms meet via final-e elision; the
+            # fixpoint then also strips an s exposed by that elision, so
+            # expense/expenses converge on the same (aggressive) stem.
+            "approve": "approv",
+            "approved": "approv",
+            "expense": "expen",
+            "expenses": "expen",
+            "leave": "leav",
+            "leaves": "leav",
+        }
+
+        for token, expected in cases.items():
+            with self.subTest(token=token):
+                self.assertEqual(stem(token), expected)
+
+    def test_short_and_protected_endings_are_unchanged(self) -> None:
+        for token in ("us", "is", "its", "bus", "less", "boss", "using",
+                      "used", "fall", "miss", "business"):
+            with self.subTest(token=token):
+                self.assertEqual(stem(token), token)
+
+    def test_stemming_is_idempotent_over_corpus_and_fixture_queries(self) -> None:
+        texts = [chunk for chunk in load_knowledge_base()]
+        texts.extend(case.query for case in load_cases("calibration"))
+
+        for text in texts:
+            for token in tokenize(text):
+                canonical = TOKEN_ALIASES.get(token, token)
+                stemmed = stem(canonical)
+                with self.subTest(token=token):
+                    self.assertEqual(stem(stemmed), stemmed)
+
+    def test_no_corpus_content_term_stems_into_a_stopword(self) -> None:
+        # A content term collapsing into a stopword would let future
+        # query-side filtering silently drop real evidence.
+        for chunk in load_knowledge_base():
+            for token in tokenize(chunk):
+                if token in STOPWORDS:
+                    continue
+                canonical = TOKEN_ALIASES.get(token, token)
+                with self.subTest(token=token):
+                    self.assertNotIn(stem(canonical), STOPWORDS)
+
+
 class RetrievalNormalizationTests(unittest.TestCase):
     def test_phrase_aliases_preserve_reviewed_multi_word_concepts(self) -> None:
+        # Expected values are the post-stemming canonical forms.
         cases = {
-            "work from home": {"remote", "work"},
-            "per diem": {"daily", "allowance"},
-            "paid time off": {"paid", "leave"},
+            "work from home": {"remot", "work"},
+            "per diem": {"daily", "allowanc"},
+            "paid time off": {"paid", "leav"},
             "overseas business trip": {
                 "international",
                 "travel",
@@ -323,6 +386,7 @@ class RetrievalNormalizationTests(unittest.TestCase):
         )
 
     def test_token_aliases_canonicalize_domain_variants(self) -> None:
+        # Alias targets are stemmed afterwards (leave -> leav, remote -> remot).
         self.assertEqual(
             normalized_tokens(
                 "remotely vacation entitlements methods accepted",
@@ -330,8 +394,8 @@ class RetrievalNormalizationTests(unittest.TestCase):
             ),
             frozenset(
                 {
-                    "remote",
-                    "leave",
+                    "remot",
+                    "leav",
                     "entitlement",
                     "method",
                     "accept",
@@ -345,10 +409,12 @@ class RetrievalNormalizationTests(unittest.TestCase):
         query_terms = normalized_tokens(text, is_query=True)
         document_terms = normalized_tokens(text, is_query=False)
 
-        self.assertEqual(query_terms, frozenset({"remote", "days", "week"}))
+        self.assertEqual(query_terms, frozenset({"remot", "day", "week"}))
         self.assertTrue(
-            {"many", "allowed", "each"} <= document_terms
+            {"many", "each"} <= document_terms
         )
+        # "allowed" survives on the document side too, in stemmed form.
+        self.assertIn("allow", document_terms)
 
     def test_inverse_document_frequency_rewards_rare_terms(self) -> None:
         documents = [
@@ -408,6 +474,7 @@ class RetrievalEvaluationTests(unittest.TestCase):
             "natural_paraphrase": 6,
             "cross_domain_precision": 3,
             "multi_section_recall": 2,
+            "morphology": 4,
             "unknown_or_generic": 2,
         }
         for category, minimum in minimum_category_counts.items():
