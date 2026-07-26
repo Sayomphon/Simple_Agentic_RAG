@@ -27,27 +27,23 @@ PHRASE_ALIASES: tuple[tuple[str, str], ...] = (
     ("per diem", "daily allowance"),
 )
 
+# Derivational families and synonyms only. Pure inflections (books,
+# submitted, methods, ...) are intentionally absent: the stemmer already
+# maps them onto the same canonical form, and every remaining entry fails
+# stem(surface) == stem(target) — e.g. escalated stems to "escalat", not
+# "escalation", and vacations stems to "vacation", never to "leave".
 TOKEN_ALIASES: dict[str, str] = {
-    "accepted": "accept",
-    "accepts": "accept",
-    "booked": "book",
-    "booking": "book",
-    "books": "book",
-    "entitlements": "entitlement",
     "escalate": "escalation",
     "escalated": "escalation",
     "escalates": "escalation",
     "escalating": "escalation",
     "lodging": "hotel",
-    "methods": "method",
     "overseas": "international",
     "reimburse": "reimbursement",
     "reimbursed": "reimbursement",
     "reimbursing": "reimbursement",
     "remotely": "remote",
     "staff": "employee",
-    "submitted": "submit",
-    "submitting": "submit",
     "vacation": "leave",
     "vacations": "leave",
 }

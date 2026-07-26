@@ -22,12 +22,14 @@ START -> data_retriever -> report_generator -> END
 The graph has no router, retry loop, memory, or conditional search path. Each
 query follows the same bounded workflow:
 
-1. the Data Retriever requests exactly one call to
-   `search_knowledge_base`;
-2. the tool reads, validates, and searches the local knowledge base;
+1. the Data Retriever requests between one and three calls to
+   `search_knowledge_base` (one per focused sub-topic of the question);
+2. the node executes the original query first as a deterministic baseline,
+   then each sub-query, and unions the raw results;
 3. raw matching sections are stored in `snippets`;
 4. the Report Generator synthesizes an answer from those snippets only; and
-5. the CLI displays the query, evidence handoff, and final answer separately.
+5. the CLI streams the query, evidence handoff, and final answer as
+   separate stages.
 
 The handoff is a typed, intentionally minimal contract:
 
@@ -67,25 +69,34 @@ The current corpus contains 10 small, machine-delimited sections, so a local
 lexical scan is easier to inspect and reproduce than an embedding service or
 vector database. `src/tools/retrieval.py` performs the following steps:
 
-1. read `knowledge_base.txt` as UTF-8;
+1. read `knowledge_base.txt` as UTF-8, with parsing cached per file
+   identity (path, `mtime_ns`, size);
 2. require at least one `--- Section Title ---` heading and a non-empty body
    for every section;
-3. tokenize English/alphanumeric text with `[a-z0-9]+`;
-4. remove English stop words and generic enterprise terms such as `policy`,
-   `company`, and `information`;
-5. count distinct query terms found in each section;
-6. require strict-majority term coverage for the normal case;
-7. retain strongest multi-term title matches for verbose, multi-intent
-   questions;
+3. tokenize English/alphanumeric text with `[a-z0-9]+` and apply reviewed
+   phrase aliases (`per diem` → `daily allowance`) and token aliases for
+   derivational variants and synonyms (`lodging` → `hotel`);
+4. remove English stop words, query-framing words, and generic enterprise
+   terms such as `policy` and `company` from query terms only;
+5. stem both query and section terms with a light inflectional stemmer
+   (`-s`/`-es`/`-ies`/`-ed`/`-ing`, final-e elision, run to an idempotent
+   fixpoint) — after aliases, so reviewed mappings win;
+6. weight each distinct matched term by smoothed IDF, with title matches
+   at 1.5x body weight;
+7. admit a candidate only with a title anchor or at least two matched
+   terms, and keep candidates scoring at least 60% of the best score
+   (minimum 1.0);
 8. for a focused two-term query, retain title-linked sibling sections only
    when a full-coverage section provides a reliable anchor; and
-9. rank by matched-term count, then by original source order.
+9. rank by score, then by original source order.
 
 The title exceptions solve two different recall problems without turning every
 shared word into a match. A broad request for international-travel rules can
 retrieve approval, allowance, and insurance sections, while a request for an
 international card fee does not admit every section containing
-`international`.
+`international`. Each layer's measured contribution is in
+`evaluation_results.md` (V0–V5 ablation over a calibration and a held-out
+set).
 
 Version-controlled regression cases include:
 
@@ -137,14 +148,18 @@ semantics:
 
 - only `search_knowledge_base` is bound;
 - `tool_choice="required"` forces a tool request;
-- exactly one tool call and the expected tool name are required;
-- the proposed tool query must exactly equal `state["query"]`; and
-- the graph-state query, not arbitrary model output, is used to invoke the
-  tool.
+- between one and three tool calls with the expected tool name and
+  non-empty string queries are required — anything else raises
+  `RetrievalProtocolError`;
+- the node executes every search itself: the graph-state query always runs
+  first, so the handoff is a superset of the deterministic single-search
+  baseline regardless of how the model decomposes; and
+- invalid input (empty, whitespace-only, or over-length queries) is
+  rejected before any LLM call.
 
-These checks are enforced in code as well as in the prompt. A malformed or
-altered tool call fails visibly instead of continuing with untrusted
-arguments.
+These checks are enforced in code as well as in the prompt. A malformed
+tool-call plan fails visibly instead of continuing with untrusted
+arguments, and a poor decomposition can only add evidence, never lose it.
 
 This design has a deliberate trade-off: the Retriever LLM call demonstrates
 agent/tool orchestration but adds provider latency and token cost without
@@ -172,10 +187,16 @@ I could not find this information in the knowledge base.
 ```
 
 When snippets exist but are insufficient, the same behavior is requested at
-the prompt layer. This second case is probabilistic: the current implementation
-does not independently verify every generated claim against the snippets.
-The design therefore reduces hallucination risk but does not prove factual
-grounding.
+the prompt layer, and a mixed question whose evidence covers only part of it
+is answered partially with the uncovered part named plainly. Two further
+layers harden grounding in code: snippets are passed inside an
+`<evidence>` block the prompt declares to be data (knowledge-base text is
+untrusted), and every `[Section Title]` citation in a real answer is
+validated against the handed-off snippets — an invented citation raises
+`ReportGenerationError`. Beyond citations, per-claim verification remains
+probabilistic: the live answer eval measures required facts, unsupported
+numbers, and forbidden facts per run, but no per-sentence semantic check
+exists.
 
 LangChain responses may contain a plain string or structured content blocks.
 The Generator reads the framework's normalized text accessor, trims the result,
@@ -218,26 +239,34 @@ output by default.
 
 Using Python 3.11.15 in the repository's clean virtual environment:
 
-- all 42 offline unit tests pass;
+- all 99 offline unit tests pass (4 live tests skipped by default);
 - the knowledge base loads as exactly 10 ordered sections;
-- retrieval results are deterministic for repeated queries;
+- retrieval results are deterministic for repeated queries, and the parse
+  cache invalidates on file change;
 - generic-only, stopword-only, unknown, empty, and malformed-corpus cases are
   distinguished;
-- the Retriever rejects missing, multiple, unexpected, and query-altering
-  tool calls;
+- stemming is idempotent over every corpus and fixture token and never
+  collapses a content term into a stopword;
+- the Retriever rejects missing, excess, unexpected, and empty tool calls,
+  and its handoff is a superset of the deterministic baseline search;
+- invalid queries are rejected before any LLM call;
+- invented citations raise instead of shipping a fabricated source;
 - raw snippet lists cross the LangGraph handoff unchanged;
 - the graph contains exactly the two intended agent nodes;
 - the deterministic not-found path makes no Generator LLM call;
 - string and structured model text are normalized;
+- the streamed CLI answer ends byte-equal with the state report;
 - interactive execution recovers after a query failure;
 - bytecode compilation succeeds; and
 - installed dependencies pass `pip check`.
 
 The suite mocks the LLM boundary and requires neither an API key nor network
-access. These tests verify known contracts and regressions; they are not a
-production retrieval benchmark or an answer-quality evaluation. There is no
-current claim for semantic recall, groundedness rate, latency SLO, or cost per
-query over real user traffic.
+access. Retrieval quality itself is measured by
+`src/evaluation/run_retrieval_eval.py` over a calibration and a held-out set
+(`evaluation_results.md`), and answer quality by the opt-in
+`run_answer_eval.py` (`answer_eval_results.md`) — those reports, not this
+test list, carry the quality numbers. There is still no claim for latency
+SLO or cost per query over real user traffic.
 
 ## Security and operational boundary
 

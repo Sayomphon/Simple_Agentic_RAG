@@ -12,7 +12,7 @@ Negative queries (empty expectation) are excluded from precision/recall/MRR and 
 | V1_+query_filters | 29.6% | 40.7% | 59.8% | 100.0% | 0.748 | 41.8% | 100.0% | 0.967 | 33.3% | 62.5% | 0.0% |
 | V2_+aliases | 29.6% | 40.7% | 60.2% | 100.0% | 0.751 | 42.7% | 100.0% | 1.000 | 33.3% | 62.5% | 0.0% |
 | V3_+idf_title_weight | 40.7% | 40.7% | 60.2% | 100.0% | 0.751 | 42.7% | 100.0% | 1.000 | 33.3% | 62.5% | 0.0% |
-| V4_+gate_sibling | 92.6% | 92.6% | 95.8% | 93.8% | 0.948 | 100.0% | 94.7% | 0.958 | 0.0% | 0.0% | 8.3% |
+| V4_+gate_sibling | 88.9% | 88.9% | 95.8% | 92.4% | 0.941 | 100.0% | 92.1% | 0.958 | 0.0% | 0.0% | 12.5% |
 | V5_current_+stemming | 100.0% | 100.0% | 100.0% | 100.0% | 1.000 | 100.0% | 100.0% | 1.000 | 0.0% | 0.0% | 0.0% |
 
 Current variant `V5_current_+stemming` latency: p50 0.02 ms, p95 0.04 ms (single process, local file scan).
@@ -30,7 +30,7 @@ Current variant `V5_current_+stemming` latency: p50 0.02 ms, p95 0.04 ms (single
 | V4_+gate_sibling | 50.0% | 50.0% | 60.6% | 63.6% | 0.621 | 90.0% | 64.3% | 0.636 | 66.7% | 9.1% | 36.4% |
 | V5_current_+stemming | 57.1% | 57.1% | 77.3% | 72.7% | 0.749 | 76.9% | 71.4% | 0.818 | 66.7% | 18.2% | 36.4% |
 
-Current variant `V5_current_+stemming` latency: p50 0.02 ms, p95 0.03 ms (single process, local file scan).
+Current variant `V5_current_+stemming` latency: p50 0.02 ms, p95 0.04 ms (single process, local file scan).
 
 ### `V5_current_+stemming` mismatches on heldout
 
