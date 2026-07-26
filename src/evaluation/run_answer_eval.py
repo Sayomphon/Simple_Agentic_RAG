@@ -90,6 +90,20 @@ def main() -> int:
     from dotenv import load_dotenv
 
     load_dotenv()
+
+    from src.config import SEARCH_MODE
+
+    # The baseline_coverage axis compares each handoff against the offline
+    # lexical `search`, while the pipeline retrieves with the configured
+    # mode; any other mode would fail that axis by design, not by defect.
+    if SEARCH_MODE != "lexical":
+        print(
+            "ERROR: the answer eval is defined for SEARCH_MODE=lexical only "
+            f"(got {SEARCH_MODE!r}); unset SEARCH_MODE and rerun.",
+            file=sys.stderr,
+        )
+        return 1
+
     if not os.getenv("OPENAI_API_KEY"):
         print("ERROR: OPENAI_API_KEY is required for the live answer eval.",
               file=sys.stderr)
@@ -205,6 +219,7 @@ def main() -> int:
         else:
             record.failures.append("citation_validity")
 
+        # `search` is the lexical baseline; main() rejects other modes above.
         if set(search(record.query)) <= set(record.snippets):
             coverage_ok += 1
         else:

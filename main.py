@@ -13,6 +13,7 @@ import sys
 from dotenv import load_dotenv
 from langgraph.graph.state import CompiledStateGraph
 
+from src.agents.retriever import InvalidQueryError
 from src.graph import build_graph
 from src.retrievers.base import SearchTelemetry, SnippetTrace
 
@@ -140,6 +141,10 @@ def run_query(graph: CompiledStateGraph, query: str) -> dict[str, object]:
                 if len(visible) > len(emitted):
                     print(visible[len(emitted) :], end="", flush=True)
                     emitted = visible
+    except InvalidQueryError as exc:
+        # Pre-LLM validation messages are written by this codebase, name the
+        # limit that was hit, and never quote the query — safe to surface.
+        raise QueryExecutionError(str(exc)) from exc
     except Exception as exc:
         raise QueryExecutionError(
             "The RAG pipeline could not process this query"

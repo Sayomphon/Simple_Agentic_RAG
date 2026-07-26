@@ -606,6 +606,11 @@ OPENAI_API_KEY= python -m src.evaluation.run_retrieval_eval  # lexical only
 RUN_LIVE_LLM_TESTS=1 python -m src.evaluation.run_answer_eval
 ```
 
+The answer eval is defined for the default `SEARCH_MODE=lexical` only — its
+`baseline_coverage` axis compares each handoff against the offline lexical
+baseline — and the runner refuses other modes up front rather than reporting
+misleading failures.
+
 ### Datasets
 
 Four labeled retrieval sets plus one answer-quality set, all in

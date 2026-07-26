@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 import json
+import os
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
+from unittest.mock import patch
 
 from langchain_core.exceptions import OutputParserException
+
+from src import config
+from src.evaluation import run_answer_eval
 
 from src.evaluation.judges import (
     FAITHFULNESS_SCHEMA,
@@ -262,6 +269,34 @@ class JudgeReportTests(unittest.TestCase):
         self.assertIn("Mostly direct.", details)
         self.assertIn(r"\|next\nline", details)
         self.assertNotIn("<script>", details)
+
+
+class AnswerEvalModeGuardTests(unittest.TestCase):
+    """The live answer eval must refuse modes its axes are not defined for."""
+
+    def test_non_lexical_mode_fails_before_any_provider_use(self) -> None:
+        stderr = StringIO()
+
+        with (
+            patch.dict(os.environ, {"RUN_LIVE_LLM_TESTS": "1"}),
+            patch.object(config, "SEARCH_MODE", "semantic"),
+            redirect_stderr(stderr),
+        ):
+            exit_status = run_answer_eval.main()
+
+        self.assertEqual(exit_status, 1)
+        self.assertIn("SEARCH_MODE=lexical", stderr.getvalue())
+        self.assertIn("'semantic'", stderr.getvalue())
+
+    def test_live_opt_in_gate_still_runs_before_the_mode_guard(self) -> None:
+        with (
+            patch.dict(os.environ, {"RUN_LIVE_LLM_TESTS": "0"}),
+            patch.object(config, "SEARCH_MODE", "semantic"),
+            redirect_stdout(StringIO()),
+        ):
+            exit_status = run_answer_eval.main()
+
+        self.assertEqual(exit_status, 0)
 
 
 if __name__ == "__main__":

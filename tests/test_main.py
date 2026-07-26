@@ -11,6 +11,7 @@ from unittest.mock import Mock, call, patch
 
 import main as cli
 from src.agents.reporter import NOT_FOUND_SENTENCE
+from src.agents.retriever import InvalidQueryError
 from src.retrievers.base import SearchTelemetry, SnippetTrace
 
 
@@ -55,6 +56,24 @@ class MainTests(unittest.TestCase):
 
         self.assertIs(context.exception.__cause__, original_error)
         self.assertNotIn("sensitive user query", str(context.exception))
+
+    def test_run_query_surfaces_actionable_validation_messages(self) -> None:
+        # Pre-LLM validation errors name the limit without quoting the query,
+        # so the user must see them verbatim instead of the generic wrapper.
+        graph = Mock()
+        validation_error = InvalidQueryError(
+            "Query is 2500 characters long; the limit is 2000."
+        )
+        graph.stream.side_effect = validation_error
+
+        with (
+            self.assertRaises(cli.QueryExecutionError) as context,
+            redirect_stdout(StringIO()),
+        ):
+            cli.run_query(graph, "q" * 2500)
+
+        self.assertEqual(str(context.exception), str(validation_error))
+        self.assertIs(context.exception.__cause__, validation_error)
 
     def test_successful_run_query_renders_and_returns_result(self) -> None:
         graph = Mock()
