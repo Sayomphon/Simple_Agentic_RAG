@@ -11,16 +11,21 @@ from unittest.mock import Mock, call, patch
 
 import main as cli
 from src.agents.reporter import NOT_FOUND_SENTENCE
+from src.retrievers.base import SearchTelemetry, SnippetTrace
 
 
 def _stream_events(
     snippets: list[str],
     report: str,
     chunks: tuple[str, ...] = (),
+    telemetry: tuple[SearchTelemetry, ...] = (),
 ) -> list[tuple[str, object]]:
     """Build the (mode, payload) events graph.stream would yield."""
+    retriever_update: dict[str, object] = {"snippets": snippets}
+    if telemetry:
+        retriever_update["retrieval_telemetry"] = list(telemetry)
     events: list[tuple[str, object]] = [
-        ("updates", {"data_retriever": {"snippets": snippets}})
+        ("updates", {"data_retriever": retriever_update})
     ]
     events.extend(
         (
@@ -109,6 +114,73 @@ class MainTests(unittest.TestCase):
         self.assertIn("(none)", output.getvalue())
         self.assertIn(NOT_FOUND_SENTENCE, output.getvalue())
 
+    def test_retrieval_telemetry_is_rendered_and_returned(self) -> None:
+        graph = Mock()
+        telemetry = SearchTelemetry(
+            mode="semantic",
+            query="international travel",
+            latency_ms=12.34,
+            empty_reason=None,
+            snippets=(
+                SnippetTrace(
+                    title="Travel",
+                    score=0.8765,
+                    method="semantic",
+                    detail="cosine=0.8765",
+                ),
+            ),
+        )
+        graph.stream.return_value = iter(
+            _stream_events(
+                snippets=["--- Travel ---\nGrounded evidence."],
+                report="Grounded answer.",
+                telemetry=(telemetry,),
+            )
+        )
+        output = StringIO()
+
+        with redirect_stdout(output):
+            result = cli.run_query(graph, "international travel")
+
+        rendered = output.getvalue()
+        self.assertIn(
+            "#1 [Travel] score=0.8765 method=semantic",
+            rendered,
+        )
+        self.assertIn(
+            "mode=semantic attempts=1 retrieval=12.34ms",
+            rendered,
+        )
+        self.assertEqual(
+            result["retrieval_telemetry"],
+            [telemetry],
+        )
+
+    def test_no_query_terms_reason_is_rendered(self) -> None:
+        graph = Mock()
+        telemetry = SearchTelemetry(
+            mode="lexical",
+            query="นโยบาย",
+            latency_ms=0.02,
+            empty_reason="no_query_terms",
+            snippets=(),
+        )
+        graph.stream.return_value = iter(
+            _stream_events(
+                snippets=[],
+                report=NOT_FOUND_SENTENCE,
+                telemetry=(telemetry,),
+            )
+        )
+        output = StringIO()
+
+        with redirect_stdout(output):
+            cli.run_query(graph, "นโยบาย")
+
+        self.assertIn(
+            "query produced no searchable terms (lexical mode)",
+            output.getvalue(),
+        )
     def test_divergent_stream_preview_still_ends_with_the_report(self) -> None:
         graph = Mock()
         graph.stream.return_value = iter(

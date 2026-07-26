@@ -1137,6 +1137,31 @@ pre {
   color: var(--color-text-secondary);
 }
 
+.snippet-method {
+  flex: none;
+  padding: 0 var(--space-1);
+  border: var(--border-w) solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  text-transform: lowercase;
+}
+
+.snippet-method[data-method="semantic"] {
+  border-color: var(--color-accent-border);
+  background: var(--color-accent-bg);
+  color: var(--color-accent-fg);
+}
+
+.snippet-method[data-method="both"] {
+  border-color: var(--color-success-border);
+  background: var(--color-success-bg);
+  color: var(--color-success-fg);
+}
+
 .snippet-tag {
   flex: none;
   padding: 0 var(--space-1);

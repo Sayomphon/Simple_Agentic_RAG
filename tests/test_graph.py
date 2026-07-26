@@ -24,6 +24,7 @@ from src.agents.retriever import (
     retriever_node,
 )
 from src.config import LLM_MAX_RETRIES, LLM_TIMEOUT_SECONDS
+from src.retrievers.base import SearchTelemetry, SnippetTrace
 
 
 class AgentAndGraphTests(unittest.TestCase):
@@ -318,6 +319,75 @@ class AgentAndGraphTests(unittest.TestCase):
         self.assertEqual(result, {"snippets": []})
         mock_tool.invoke.assert_called_once_with({"query": "unknown topic"})
 
+    @patch("src.agents.retriever.consume_last_telemetry")
+    @patch("src.agents.retriever.search_knowledge_base")
+    @patch("src.agents.retriever.get_llm")
+    def test_retriever_collects_telemetry_for_every_executed_query(
+        self,
+        mock_get_llm: Mock,
+        mock_tool: Mock,
+        mock_consume: Mock,
+    ) -> None:
+        self._configure_tool(mock_tool)
+        bound_llm = Mock()
+        bound_llm.invoke.return_value = SimpleNamespace(
+            tool_calls=[
+                {
+                    "name": "search_knowledge_base",
+                    "args": {"query": "travel approval"},
+                }
+            ]
+        )
+        mock_get_llm.return_value.bind_tools.return_value = bound_llm
+        baseline_chunk = "--- Travel Policy ---\nTravel evidence."
+        focused_chunk = "--- Travel Approval ---\nApproval evidence."
+        mock_tool.invoke.side_effect = [
+            [baseline_chunk],
+            [focused_chunk],
+        ]
+        baseline_trace = SearchTelemetry(
+            mode="lexical",
+            query="travel policy and approval",
+            latency_ms=0.10,
+            empty_reason=None,
+            snippets=(
+                SnippetTrace(
+                    title="Travel Policy",
+                    score=3.0,
+                    method="lexical",
+                    detail="matched_terms=travel",
+                ),
+            ),
+        )
+        focused_trace = SearchTelemetry(
+            mode="lexical",
+            query="travel approval",
+            latency_ms=0.08,
+            empty_reason=None,
+            snippets=(
+                SnippetTrace(
+                    title="Travel Approval",
+                    score=4.0,
+                    method="lexical",
+                    detail="matched_terms=approval, travel",
+                ),
+            ),
+        )
+        mock_consume.side_effect = [None, baseline_trace, focused_trace]
+
+        result = retriever_node(
+            self._state("travel policy and approval")
+        )
+
+        self.assertEqual(
+            result["snippets"],
+            [baseline_chunk, focused_chunk],
+        )
+        self.assertEqual(
+            result["retrieval_telemetry"],
+            [baseline_trace, focused_trace],
+        )
+
     @patch("src.agents.reporter.get_llm")
     def test_generator_normalizes_plain_string_content(
         self,
@@ -593,6 +663,41 @@ class GroundingHardeningTests(unittest.TestCase):
             f"<evidence>\n{injected_snippet}\n</evidence>",
             human_message.content,
         )
+
+    @patch("src.agents.reporter.get_llm")
+    def test_reporter_prompt_never_receives_retrieval_telemetry(
+        self,
+        mock_get_llm: Mock,
+    ) -> None:
+        mock_llm = mock_get_llm.return_value
+        mock_llm.invoke.return_value = AIMessage(
+            content="Grounded answer. [Annual Leave]"
+        )
+        marker = "telemetry-must-not-enter-the-prompt"
+        state = self._state([self.SNIPPETS[0]])
+        state["retrieval_telemetry"] = [
+            SearchTelemetry(
+                mode="lexical",
+                query="internal retrieval sub-query",
+                latency_ms=0.12,
+                empty_reason=None,
+                snippets=(
+                    SnippetTrace(
+                        title="Annual Leave",
+                        score=9.8765,
+                        method="lexical",
+                        detail=marker,
+                    ),
+                ),
+            )
+        ]
+
+        generator_node(state)
+
+        messages = mock_llm.invoke.call_args.args[0]
+        prompt = "\n".join(str(message.content) for message in messages)
+        self.assertNotIn(marker, prompt)
+        self.assertNotIn("9.8765", prompt)
 
 
 class QueryValidationTests(unittest.TestCase):

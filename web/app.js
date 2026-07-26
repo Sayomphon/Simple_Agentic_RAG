@@ -403,12 +403,54 @@
   /* ── D/F · Evidence rendering ─────────────────────────────────────────── */
 
   function formatScore(value) {
-    return (Math.round(value * 10) / 10).toFixed(1);
+    return value.toFixed(4);
   }
 
-  function renderEvidenceEmpty(retrieval) {
+  function summarizeTelemetry(result) {
+    var attempts = result.retrievalTelemetry || [];
+    var modes = [];
+    var tracesByTitle = Object.create(null);
+    var latencyMs = 0;
+    var noQueryTerms = 0;
+    var gatedOut = 0;
+
+    attempts.forEach(function (attempt) {
+      if (modes.indexOf(attempt.mode) === -1) modes.push(attempt.mode);
+      latencyMs += attempt.latencyMs;
+      if (attempt.emptyReason === "no_query_terms") noQueryTerms += 1;
+      if (attempt.emptyReason === "gated_out") gatedOut += 1;
+      attempt.snippets.forEach(function (trace) {
+        if (!Object.prototype.hasOwnProperty.call(tracesByTitle, trace.title)) {
+          tracesByTitle[trace.title] = trace;
+        }
+      });
+    });
+
+    return {
+      attempts: attempts.length,
+      modes: modes,
+      latencyMs: latencyMs,
+      noQueryTerms: noQueryTerms,
+      gatedOut: gatedOut,
+      tracesByTitle: tracesByTitle
+    };
+  }
+
+  function renderEvidenceEmpty(result, summary) {
+    var retrieval = result.retrieval;
     var reason;
-    if (retrieval && retrieval.bestScore > 0 && retrieval.bestScore < retrieval.cutoff) {
+    if (summary.noQueryTerms && summary.noQueryTerms === summary.attempts) {
+      reason =
+        "The query produced no searchable terms in lexical mode. Try an English translation or semantic mode.";
+    } else if (summary.noQueryTerms) {
+      reason =
+        "At least one lexical attempt produced no searchable terms; the remaining attempts returned no section above the relevance gate.";
+    } else if (summary.gatedOut) {
+      reason =
+        "No section passed the relevance gate across " +
+        summary.attempts +
+        (summary.attempts === 1 ? " retrieval attempt." : " retrieval attempts.");
+    } else if (retrieval && retrieval.bestScore > 0 && retrieval.bestScore < retrieval.cutoff) {
       reason =
         "Best match scored " +
         formatScore(retrieval.bestScore) +
@@ -483,23 +525,28 @@
   function renderEvidence(result) {
     var snippets = result.snippets;
     var retrieval = result.retrieval;
+    var summary = summarizeTelemetry(result);
 
     el.evidenceClamp.classList.remove("is-clamped");
     el.evidenceExpand.hidden = true;
     el.evidenceExpand.setAttribute("aria-expanded", "false");
 
     if (!snippets.length) {
-      renderEvidenceEmpty(retrieval);
+      renderEvidenceEmpty(result, summary);
       return;
     }
 
     el.evidenceList.innerHTML = snippets
       .map(function (chunk, index) {
         var title = sectionTitle(chunk);
+        var trace = summary.tracesByTitle[title] || null;
         var score =
-          retrieval && retrieval.scores && retrieval.scores.length > index
+          trace
+            ? formatScore(trace.score)
+            : retrieval && retrieval.scores && retrieval.scores.length > index
             ? formatScore(retrieval.scores[index])
             : null;
+        var scoreDetail = trace && trace.detail ? trace.detail : "Retrieval score";
         return (
           '<figure class="snippet" id="snippet-' +
           index +
@@ -514,8 +561,17 @@
           escapeHtml(title) +
           "</span>" +
           (score !== null
-            ? '<span class="snippet-score" title="Retrieval score (title-weighted term match)">score ' +
+            ? '<span class="snippet-score" title="' +
+              escapeHtml(scoreDetail) +
+              '">score ' +
               score +
+              "</span>"
+            : "") +
+          (trace
+            ? '<span class="snippet-method" data-method="' +
+              escapeHtml(trace.method) +
+              '">' +
+              escapeHtml(trace.method) +
               "</span>"
             : "") +
           '<span class="snippet-tag">raw</span>' +
@@ -570,12 +626,26 @@
 
   function renderResult(result) {
     var count = result.snippets.length;
+    var telemetry = summarizeTelemetry(result);
+    var emptyAttempts = telemetry.noQueryTerms + telemetry.gatedOut;
 
     renderToolCall(result.query);
     el.retrieverMeta.innerHTML = metaHtml([
-      ["Tool calls", "1"],
+      ["Tool calls", telemetry.attempts ? String(telemetry.attempts) : "1"],
       ["Snippets returned", String(count)],
       ["Query forwarded", result.query === state.query ? "Unchanged" : "Modified"],
+      telemetry.modes.length ? ["Mode", telemetry.modes.join(" / ")] : null,
+      telemetry.attempts
+        ? ["Retrieval latency", telemetry.latencyMs.toFixed(2) + " ms"]
+        : null,
+      emptyAttempts
+        ? [
+            "Empty attempts",
+            telemetry.noQueryTerms
+              ? telemetry.noQueryTerms + " no searchable terms"
+              : telemetry.gatedOut + " gated out"
+          ]
+        : null,
       result.retrieval
         ? ["Score cutoff", formatScore(result.retrieval.cutoff)]
         : null

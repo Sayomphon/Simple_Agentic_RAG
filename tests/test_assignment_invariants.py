@@ -12,7 +12,7 @@ from langgraph.graph import END, START
 
 from src import config
 from src.agents.reporter import generator_node
-from src.graph import build_graph
+from src.graph import PipelineState, build_graph
 from src.retrievers.factory import clear_retriever_cache
 from src.tools.retrieval import search_knowledge_base
 
@@ -41,6 +41,16 @@ class AssignmentInvariantTests(unittest.TestCase):
             },
         )
         self.assertFalse(graph.builder.branches)
+
+    def test_pipeline_required_handoff_fields_are_unchanged(self) -> None:
+        self.assertEqual(
+            PipelineState.__required_keys__,
+            frozenset({"query", "snippets", "report"}),
+        )
+        self.assertEqual(
+            PipelineState.__optional_keys__,
+            frozenset({"retrieval_telemetry"}),
+        )
 
     def test_tool_schema_and_raw_chunk_contract_are_unchanged(self) -> None:
         snippets = search_knowledge_base.invoke(

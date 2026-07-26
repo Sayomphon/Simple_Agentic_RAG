@@ -7,7 +7,7 @@
 
 ![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/Orchestration-LangGraph-1C3C3C)
-![Tests](https://img.shields.io/badge/tests-128%20passing%20%7C%205%20live%20skipped-brightgreen)
+![Tests](https://img.shields.io/badge/tests-137%20passing%20%7C%205%20live%20skipped-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 This repository is a deliberately small implementation of the
@@ -49,6 +49,10 @@ audit.
   sections it returns; a mixed question may be split into up to three
   sub-queries, but the handoff always contains at least everything a single
   search over the original query returns.
+- **Per-snippet observability:** CLI and web consumers can inspect each
+  section's retrieval score, method, allowlisted diagnostic detail, and
+  measured retrieval latency without adding that metadata to the Generator
+  prompt.
 - **Grounded generation:** the Generator is instructed to use only the
   retrieved evidence, snippets are passed inside a declared `<evidence>`
   data boundary, and every `[Section Title]` citation is validated at
@@ -99,14 +103,21 @@ The graph topology has no router, retry loop, or conditional retrieval path:
 START -> data_retriever -> report_generator -> END
 ```
 
-Agent-to-agent handoff uses one explicit state contract:
+Agent-to-agent handoff uses three required fields. Retrieval diagnostics are
+an optional UI-only field carried beside that handoff:
 
 ```python
 class PipelineState(TypedDict):
-    query: str            # original user question
-    snippets: list[str]   # Retriever output -> Generator input
-    report: str           # final answer
+    query: str
+    snippets: list[str]   # only this raw evidence enters the Generator prompt
+    report: str
+    retrieval_telemetry: NotRequired[list[SearchTelemetry]]
 ```
+
+`retrieval_telemetry` never changes the `search_knowledge_base` schema or its
+`list[str]` output. The Retriever consumes it immediately after each tool call;
+the Reporter continues to construct its prompt from `query` and `snippets`
+only.
 
 ### Agent responsibilities
 
@@ -294,7 +305,7 @@ summarize, enrich, rerank, or rewrite the evidence.
 │   │   ├── run_retrieval_eval.py # lexical + semantic + hybrid evaluation
 │   │   └── run_answer_eval.py    # opt-in live answer eval runner
 │   ├── retrievers/
-│   │   ├── base.py               # Retriever protocol and scored result
+│   │   ├── base.py               # Retriever, scored result, telemetry contracts
 │   │   ├── lexical.py            # measured offline implementation
 │   │   ├── semantic.py           # embeddings, cosine, validated disk cache
 │   │   ├── hybrid.py             # gate-first reciprocal-rank fusion
@@ -314,6 +325,7 @@ summarize, enrich, rerank, or rewrite the evidence.
 │   ├── test_evaluation.py        # dataset loader and metric tests
 │   ├── test_graph.py             # agent behavior and graph handoff
 │   ├── test_live_e2e.py          # opt-in real provider integration
+│   ├── test_telemetry.py         # score/provenance/latency isolation tests
 │   └── test_main.py              # CLI streaming and failure recovery
 └── web/                          # dependency-free single-page UI
     ├── index.html                # markup for the five pipeline stages
@@ -402,9 +414,10 @@ python main.py
 Enter an empty line, `exit`, `quit`, or press `Ctrl-C` to stop.
 
 The CLI exposes all three observable stages and streams them: the snippet
-block prints as soon as retrieval finishes, and answer tokens render as
-they arrive (the final text on screen is always byte-equal with the
-pipeline's report state):
+block prints as soon as retrieval finishes, with rank, score, retrieval
+method, attempt count, and measured retrieval latency. Answer tokens render
+as they arrive, and the final text on screen is always byte-equal with the
+pipeline's report state:
 
 ```text
 [1] USER QUERY
@@ -428,9 +441,11 @@ What is the CEO's salary?
 
 ### Web interface
 
-The repository also ships a single-page UI that renders the same workflow as five
-sequential stages, keeping the raw retrieved evidence visually separate from the
-synthesised answer.
+The repository also ships a single-page UI that renders the same workflow as
+five sequential stages. Each evidence card keeps the raw section separate from
+the synthesised answer while showing its `lexical`, `semantic`, or `both`
+provenance badge and score. Retriever metadata shows the configured mode,
+attempt count, empty-attempt reason, and total retrieval latency.
 
 ```bash
 open web/index.html
@@ -444,10 +459,11 @@ every state is demonstrable offline, including the not-found guardrail.
 
 This repository contains no HTTP service, so live mode requires adding one.
 `web/api.js` is the single seam: point `CONFIG.endpoint` at a `POST /api/query`
-route that returns `PipelineState` as JSON, then switch the header pill to
-**Live backend**. [`web/README.md`](web/README.md) contains the FastAPI snippet
-and the full contract, including why an empty `snippets` array is a valid result
-rather than an error.
+route that returns `PipelineState` as JSON, including optional
+`retrieval_telemetry`, then switch the header pill to **Live backend**.
+[`web/README.md`](web/README.md) contains the FastAPI snippet and the full
+contract, including why an empty `snippets` array is a valid result rather than
+an error.
 
 ## Tests
 
@@ -457,7 +473,7 @@ Run the complete default suite:
 python -m unittest discover -v
 ```
 
-The default run discovers **126 tests**: **122 pass offline** and the **4 live
+The default run discovers **142 tests**: **137 pass offline** and the **5 live
 tests are skipped**. It covers:
 
 - knowledge-base loading, section splitting, and parse-cache invalidation;
@@ -471,6 +487,9 @@ tests are skipped**. It covers:
 - the ablation ladder's equivalence with production settings;
 - exact two-agent/sequential-graph assignment invariants and the unchanged
   `query: str -> list[str]` tool contract;
+- per-mode telemetry population, thread isolation, consume-on-read behavior,
+  empty-reason diagnostics, optional graph state, and Reporter prompt
+  isolation;
 - semantic cosine validation, threshold gating, byte-exact raw chunk mapping,
   missing-credential failure semantics, and document-cache reuse,
   invalidation, corruption recovery, and file permissions;
@@ -532,14 +551,15 @@ python -m unittest tests.test_live_e2e -v
 ```
 
 `OPENAI_API_KEY` must be present in the environment or `.env`; otherwise the
-opted-in class is skipped with a clear reason. The four tests use only
-fictional knowledge-base questions and make approximately seven provider
+opted-in class is skipped with a clear reason. The five tests use only
+fictional knowledge-base questions and make approximately nine provider
 calls:
 
 | Test | Retriever LLM | Reporter LLM | Total |
 |---|---:|---:|---:|
 | Known international-travel query | 1 | 1 | 2 |
 | Unknown CEO-salary query | 1 | 0 | 1 |
+| Thai cross-language query | 1 | 1 | 2 |
 | Multi-intent baseline-coverage query | 1 | 1 | 2 |
 | Streamed CLI byte-equality query | 1 | 1 | 2 |
 
@@ -874,6 +894,11 @@ not production scale.
   offline fixtures. They reproduce the retrieval gate's decisions for the
   evaluated queries but do not execute the Python tool, so the UI is a
   demonstration of the workflow rather than a second implementation of it.
+- **In-process telemetry handoff:** retrieval telemetry uses consume-on-read
+  thread-local storage because LangChain's stable tool contract must remain
+  `list[str]`. This isolates synchronous request workers, but an async service
+  should replace it with request-scoped propagation and explicitly redacted,
+  access-controlled telemetry before serving concurrent production traffic.
 
 A production evolution would add document ingestion and lifecycle management,
 a larger labeled retrieval dataset, hybrid lexical/vector retrieval, metadata

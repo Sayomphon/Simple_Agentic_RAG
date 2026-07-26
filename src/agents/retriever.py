@@ -9,7 +9,11 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from src.agents import get_llm
 from src.config import RETRIEVER_MODEL_NAME
-from src.tools.retrieval import search_knowledge_base
+from src.retrievers.base import SearchTelemetry
+from src.tools.retrieval import (
+    consume_last_telemetry,
+    search_knowledge_base,
+)
 
 if TYPE_CHECKING:
     from src.graph import PipelineState
@@ -93,7 +97,7 @@ def _validated_sub_queries(response: object) -> list[str]:
     return sub_queries
 
 
-def retriever_node(state: PipelineState) -> dict[str, list[str]]:
+def retriever_node(state: PipelineState) -> dict[str, object]:
     """Execute the model-requested tool calls and hand off their union.
 
     The node always runs the original query itself first (deterministic
@@ -103,6 +107,10 @@ def retriever_node(state: PipelineState) -> dict[str, list[str]]:
     the single-call baseline no matter how the model decomposes.
     """
     query = _validate_query(state["query"])
+
+    # Discard telemetry from any unrelated direct tool call in this execution
+    # context before an LLM or protocol failure can interrupt this run.
+    consume_last_telemetry()
     llm_with_tool = get_llm(RETRIEVER_MODEL_NAME).bind_tools(
         [search_knowledge_base],
         tool_choice="required",
@@ -115,13 +123,30 @@ def retriever_node(state: PipelineState) -> dict[str, list[str]]:
     )
     sub_queries = _validated_sub_queries(response)
 
-    snippets = list(search_knowledge_base.invoke({"query": query}))
+    # Every invocation is consumed immediately after the stable list[str]
+    # result crosses the tool boundary.
+    telemetry: list[SearchTelemetry] = []
+
+    def run_search(search_query: str) -> list[str]:
+        results = list(
+            search_knowledge_base.invoke({"query": search_query})
+        )
+        trace = consume_last_telemetry()
+        if trace is not None:
+            telemetry.append(trace)
+        return results
+
+    snippets = run_search(query)
     seen = set(snippets)
     for sub_query in sub_queries:
         if sub_query == query:
             continue  # Already covered by the baseline search.
-        for chunk in search_knowledge_base.invoke({"query": sub_query}):
+        for chunk in run_search(sub_query):
             if chunk not in seen:
                 seen.add(chunk)
                 snippets.append(chunk)
-    return {"snippets": snippets}
+
+    update: dict[str, object] = {"snippets": snippets}
+    if telemetry:
+        update["retrieval_telemetry"] = telemetry
+    return update

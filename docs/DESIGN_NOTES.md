@@ -284,7 +284,7 @@ output by default.
 
 Using Python 3.11.15 in the repository's clean virtual environment:
 
-- all 122 offline unit tests pass (4 live tests skipped by default);
+- all 137 offline unit tests pass (5 live tests skipped by default);
 - the knowledge base loads as exactly 10 ordered sections;
 - retrieval results are deterministic for repeated queries, and the parse
   cache invalidates on file change in default lexical mode;
@@ -293,6 +293,8 @@ Using Python 3.11.15 in the repository's clean virtual environment:
 - hybrid gate-first RRF preserves one-sided results and removes duplicates;
 - assignment invariants enforce two nodes, fixed sequential edges, raw
   `list[str]` tool output, a tool-free Reporter, and offline lexical default;
+- per-mode telemetry is populated and consumed once, remains isolated across
+  worker threads, and never enters the Reporter prompt;
 - generic-only, stopword-only, unknown, empty, and malformed-corpus cases are
   distinguished;
 - stemming is idempotent over every corpus and fixture token and never
@@ -335,6 +337,28 @@ Before connecting enterprise documents, the system should add content-source
 governance, access-control filtering before retrieval, prompt-injection
 evaluation, and an output policy appropriate to the business domain.
 
+## Retrieval telemetry boundary
+
+Phase 3 adds immutable `SearchTelemetry` and `SnippetTrace` values beside the
+raw-snippet handoff. The agent-facing tool still returns only `list[str]`; it
+stores one allowlisted trace in thread-local storage, and the Retriever consumes
+and clears that value immediately after each invocation. Thread-local storage
+is intentional here: LangChain invokes tools inside a copied context, so a
+`ContextVar` value set inside the tool is not visible to the caller afterward.
+It also prevents synchronous request-worker threads from sharing traces.
+
+Only reviewed fields are exposed: section title, finite score, retrieval method,
+matched lexical terms or cosine/RRF components, and measured latency. Arbitrary
+`ScoredChunk.extras` values are never copied into telemetry. The Reporter builds
+its messages from `query` and raw `snippets` only; an automated test places a
+sentinel in telemetry and proves that neither it nor its score reaches the
+prompt.
+
+This is an in-process compatibility bridge, not a distributed tracing system.
+An async or multi-process service should propagate request-scoped telemetry
+explicitly, redact user queries according to data policy, enforce access
+control, and export only approved metrics to an observability backend.
+
 ## Scaling and production path
 
 For 10 sections, reparsing and scanning the text file per request is a
@@ -358,9 +382,9 @@ the following:
 - production evaluation shows that lexical ranking no longer meets quality
   targets.
 
-The next measured step is a Thai/cross-lingual slice against the current
-semantic path. A larger corpus would justify an offline ingestion pipeline
-with stable chunk IDs, metadata and ACLs, bounded candidate retrieval, and
-possibly an ANN store behind the same snippet handoff. Adopt added
-infrastructure only when it improves measured answer quality within agreed
-latency, cost, privacy, and operational constraints.
+The Thai/cross-lingual slice and per-snippet observability are now measured
+paths. A larger corpus would justify an offline ingestion pipeline with stable
+chunk IDs, metadata and ACLs, bounded candidate retrieval, and possibly an ANN
+store behind the same snippet handoff. Adopt added infrastructure only when it
+improves measured answer quality within agreed latency, cost, privacy, and
+operational constraints.

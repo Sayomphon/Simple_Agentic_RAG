@@ -11,7 +11,19 @@
  *   {
  *     "query":    "Can I work remotely?",
  *     "snippets": ["--- Remote Work Policy ---\nEmployees may ...", ...],
- *     "report":   "Yes. You may work remotely up to 3 days ..."
+ *     "report":   "Yes. You may work remotely up to 3 days ...",
+ *     "retrieval_telemetry": [{
+ *       "mode": "lexical",
+ *       "query": "Can I work remotely?",
+ *       "latency_ms": 0.08,
+ *       "empty_reason": null,
+ *       "snippets": [{
+ *         "title": "Remote Work Policy",
+ *         "score": 4.1,
+ *         "method": "lexical",
+ *         "detail": "matched_terms=remote, work"
+ *       }]
+ *     }]
  *   }
  *
  * Snippets must stay byte-identical to what `search_knowledge_base` returned —
@@ -65,15 +77,72 @@
     return error;
   }
 
+  function finiteNonNegative(value) {
+    return typeof value === "number" && isFinite(value) && value >= 0;
+  }
+
+  function normalizeTrace(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    if (typeof raw.title !== "string" || !raw.title.trim()) return null;
+    if (!finiteNonNegative(raw.score)) return null;
+
+    var methods = ["lexical", "semantic", "both"];
+    var method = methods.indexOf(raw.method) === -1 ? "unknown" : raw.method;
+    return {
+      title: raw.title.trim().slice(0, 200),
+      score: raw.score,
+      method: method,
+      detail: typeof raw.detail === "string" ? raw.detail.slice(0, 500) : ""
+    };
+  }
+
+  function normalizeTelemetry(payload) {
+    if (!Array.isArray(payload)) return [];
+
+    return payload.slice(0, 16).map(function (raw) {
+      if (!raw || typeof raw !== "object") return null;
+
+      var modes = ["lexical", "semantic", "hybrid"];
+      var mode = modes.indexOf(raw.mode) === -1 ? "unknown" : raw.mode;
+      var emptyReasons = ["no_query_terms", "gated_out"];
+      var emptyReason =
+        emptyReasons.indexOf(raw.empty_reason) === -1 ? null : raw.empty_reason;
+      var traces = Array.isArray(raw.snippets)
+        ? raw.snippets
+            .slice(0, 1000)
+            .map(normalizeTrace)
+            .filter(function (trace) {
+              return trace !== null;
+            })
+        : [];
+
+      return {
+        mode: mode,
+        query: typeof raw.query === "string" ? raw.query.slice(0, 2000) : "",
+        latencyMs: finiteNonNegative(raw.latency_ms) ? raw.latency_ms : 0,
+        emptyReason: traces.length ? null : emptyReason,
+        snippets: traces
+      };
+    }).filter(function (attempt) {
+      return attempt !== null;
+    });
+  }
+
   function normalize(payload, query) {
     var snippets = Array.isArray(payload && payload.snippets) ? payload.snippets : [];
     var report = payload && typeof payload.report === "string" ? payload.report.trim() : "";
     return {
-      query: (payload && payload.query) || query,
+      query:
+        payload && typeof payload.query === "string" && payload.query.trim()
+          ? payload.query
+          : query,
       snippets: snippets.filter(function (snippet) {
         return typeof snippet === "string" && snippet.trim() !== "";
       }),
-      report: report || NOT_FOUND_SENTENCE
+      report: report || NOT_FOUND_SENTENCE,
+      retrievalTelemetry: normalizeTelemetry(
+        payload && payload.retrieval_telemetry
+      )
     };
   }
 
@@ -81,6 +150,7 @@
   function runMock(query, emit, signal) {
     var detail;
     var snippets;
+    var retrievalLatencyMs = 0;
 
     function throwIfCancelled() {
       if (signal && signal.aborted) throw cancelledError();
@@ -90,7 +160,16 @@
     return wait(650)
       .then(function () {
         throwIfCancelled();
+        var startedAt =
+          global.performance && typeof global.performance.now === "function"
+            ? global.performance.now()
+            : Date.now();
         detail = global.RAG_MOCK.retrieveDetailed(query);
+        var finishedAt =
+          global.performance && typeof global.performance.now === "function"
+            ? global.performance.now()
+            : Date.now();
+        retrievalLatencyMs = Math.max(0, finishedAt - startedAt);
         snippets = detail.snippets;
         emit("retriever", "done");
         emit("evidence", snippets.length ? "done" : "empty");
@@ -103,8 +182,16 @@
         throwIfCancelled();
         var report = global.RAG_MOCK.report(query, snippets);
         var result = normalize({ query: query, snippets: snippets, report: report }, query);
-        // Additive display data (per-snippet scores + gate). The base contract
-        // above is unchanged; the live backend does not expose scores yet.
+        result.retrievalTelemetry = normalizeTelemetry([
+          {
+            mode: "lexical",
+            query: query,
+            latency_ms: retrievalLatencyMs,
+            empty_reason: detail.emptyReason,
+            snippets: detail.traces
+          }
+        ]);
+        // Keep the earlier mock-only cutoff diagnostic for empty-state detail.
         result.retrieval = {
           scores: detail.scores,
           bestScore: detail.bestScore,
@@ -207,7 +294,8 @@
    *           signal?: AbortSignal }} [options] - `signal` cancels the run;
    *           the returned promise then rejects with `name: "CancelledError"`.
    * @returns {Promise<{query: string, snippets: string[], report: string,
-   *                    source: string, durationMs: number, notFound: boolean}>}
+   *                    source: string, durationMs: number, notFound: boolean,
+   *                    retrievalTelemetry: object[]}>}
    */
   function runWorkflow(query, options) {
     var opts = options || {};
@@ -238,6 +326,7 @@
         notFound: notFound,
         source: mode,
         durationMs: Date.now() - startedAt,
+        retrievalTelemetry: finished.retrievalTelemetry || [],
         /* Optional scoring evidence — present on mock runs, null on live. */
         retrieval: finished.retrieval || null
       };

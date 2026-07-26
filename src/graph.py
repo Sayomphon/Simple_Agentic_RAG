@@ -1,13 +1,12 @@
 """Two-node sequential LangGraph orchestration for the submission."""
 
-from __future__ import annotations
-
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, TypedDict
 
 from src.agents.reporter import generator_node
 from src.agents.retriever import retriever_node
+from src.retrievers.base import SearchTelemetry
 
 
 class PipelineState(TypedDict):
@@ -16,6 +15,7 @@ class PipelineState(TypedDict):
     query: str
     snippets: list[str]
     report: str
+    retrieval_telemetry: NotRequired[list[SearchTelemetry]]
 
 
 def build_graph() -> CompiledStateGraph:

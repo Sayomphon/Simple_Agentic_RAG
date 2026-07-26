@@ -190,11 +190,16 @@
       snippets: [],
       scores: [],
       bestScore: 0,
-      cutoff: ABSOLUTE_CUTOFF
+      cutoff: ABSOLUTE_CUTOFF,
+      emptyReason: "gated_out",
+      traces: []
     };
 
     var queryTerms = uniqueTerms(query, true);
-    if (!queryTerms.length) return empty;
+    if (!queryTerms.length) {
+      empty.emptyReason = "no_query_terms";
+      return empty;
+    }
 
     var scored = SECTIONS.map(function (chunk, index) {
       var split = chunk.indexOf("\n");
@@ -210,6 +215,7 @@
         index: index,
         chunk: chunk,
         titleMatches: titleMatches,
+        matchedTerms: titleMatches.concat(bodyMatches),
         matchCount: titleMatches.length + bodyMatches.length,
         score: titleMatches.length * TITLE_WEIGHT + bodyMatches.length * BODY_WEIGHT
       };
@@ -271,7 +277,16 @@
         return candidate.score;
       }),
       bestScore: best,
-      cutoff: cutoff
+      cutoff: cutoff,
+      emptyReason: null,
+      traces: ordered.map(function (candidate) {
+        return {
+          title: sectionTitle(candidate.chunk),
+          score: candidate.score,
+          method: "lexical",
+          detail: "matched_terms=" + candidate.matchedTerms.slice().sort().join(", ")
+        };
+      })
     };
   }
 

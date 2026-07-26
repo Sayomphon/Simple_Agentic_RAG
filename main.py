@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from langgraph.graph.state import CompiledStateGraph
 
 from src.graph import build_graph
+from src.retrievers.base import SearchTelemetry, SnippetTrace
 
 BANNER = "=" * 68
 DIVIDER = "-" * 68
@@ -33,15 +34,64 @@ def require_api_key() -> None:
         )
 
 
-def _print_snippet_block(snippets: list[str]) -> None:
+def _section_title(snippet: str) -> str:
+    """Extract a display title from a validated raw section."""
+    header = snippet.partition("\n")[0].strip()
+    if header.startswith("---") and header.endswith("---"):
+        return header[3:-3].strip()
+    return header
+
+
+def _first_trace_by_title(
+    telemetry: list[SearchTelemetry],
+) -> dict[str, SnippetTrace]:
+    """Map unioned snippets to the first retrieval attempt that returned them."""
+    traces: dict[str, SnippetTrace] = {}
+    for attempt in telemetry:
+        for trace in attempt.snippets:
+            traces.setdefault(trace.title, trace)
+    return traces
+
+
+def _print_snippet_block(
+    snippets: list[str],
+    telemetry: list[SearchTelemetry],
+) -> None:
     """Render the evidence handoff as soon as the Retriever finishes."""
     print("[2] RETRIEVED SNIPPETS (Data Retriever -> Report Generator)")
+    traces = _first_trace_by_title(telemetry)
     if snippets:
         for index, snippet in enumerate(snippets, start=1):
-            print(f"\n({index})")
+            trace = traces.get(_section_title(snippet))
+            if trace is None:
+                print(f"\n({index})")
+            else:
+                print(
+                    f"\n#{index} [{trace.title}] "
+                    f"score={trace.score:.4f} method={trace.method}"
+                )
             print(snippet)
     else:
         print("(none)")
+
+    if telemetry:
+        modes = "/".join(dict.fromkeys(item.mode for item in telemetry))
+        total_latency = sum(item.latency_ms for item in telemetry)
+        print(
+            f"\nmode={modes} attempts={len(telemetry)} "
+            f"retrieval={total_latency:.2f}ms"
+        )
+        for index, attempt in enumerate(telemetry, start=1):
+            if attempt.empty_reason == "no_query_terms":
+                print(
+                    f"attempt {index}: query produced no searchable terms "
+                    f"({attempt.mode} mode)"
+                )
+            elif attempt.empty_reason == "gated_out":
+                print(
+                    f"attempt {index}: no section passed the relevance gate "
+                    f"({attempt.mode} mode)"
+                )
     print(DIVIDER)
     print("[3] FINAL ANSWER")
 
@@ -61,6 +111,7 @@ def run_query(graph: CompiledStateGraph, query: str) -> dict[str, object]:
     print(DIVIDER)
 
     snippets: list[str] = []
+    telemetry: list[SearchTelemetry] = []
     report = ""
     streamed = ""
     emitted = ""
@@ -71,7 +122,10 @@ def run_query(graph: CompiledStateGraph, query: str) -> dict[str, object]:
                 for node_name, update in payload.items():
                     if node_name == "data_retriever":
                         snippets = list(update["snippets"])
-                        _print_snippet_block(snippets)
+                        telemetry = list(
+                            update.get("retrieval_telemetry", [])
+                        )
+                        _print_snippet_block(snippets, telemetry)
                     elif node_name == "report_generator":
                         report = update["report"]
             elif mode == "messages":
@@ -100,7 +154,12 @@ def run_query(graph: CompiledStateGraph, query: str) -> dict[str, object]:
             print()
         print(report)
     print(BANNER)
-    return {"query": query, "snippets": snippets, "report": report}
+    return {
+        "query": query,
+        "snippets": snippets,
+        "report": report,
+        "retrieval_telemetry": telemetry,
+    }
 
 
 def _print_query_error(error: QueryExecutionError) -> None:

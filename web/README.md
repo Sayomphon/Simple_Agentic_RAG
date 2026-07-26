@@ -32,7 +32,7 @@ python3 -m http.server 8000  # then open http://localhost:8000/web/
 |---|---|
 | `index.html` | Markup for the five stages, query form, and empty/error states |
 | `styles.css` | Design tokens, layout, badges, skeletons, light + dark themes |
-| `api.js` | **The only backend seam.** `runWorkflow(query, { onStage, signal })` |
+| `api.js` | **The only backend seam.** Validates result and telemetry payloads |
 | `mock-data.js` | Offline fixtures: the 10 real KB sections + a matching gate |
 | `app.js` | One state object, one render pass per change |
 
@@ -48,6 +48,8 @@ steps:
 
 ```python
 # server.py
+from dataclasses import asdict
+
 from fastapi import FastAPI
 from pydantic import BaseModel
 from src.graph import build_graph
@@ -65,6 +67,10 @@ def run(payload: Query) -> dict:
         "query": payload.query,
         "snippets": result["snippets"],   # raw, exactly as the tool returned them
         "report": result["report"],
+        "retrieval_telemetry": [
+            asdict(item)
+            for item in result.get("retrieval_telemetry", [])
+        ],
     }
 ```
 
@@ -86,6 +92,12 @@ Python side.
 
 - `snippets` must stay **byte-identical** to `search_knowledge_base` output. The
   evidence panel exists to prove the Retriever did not rewrite anything.
+- `retrieval_telemetry` is optional and additive. Each attempt contains
+  `mode`, `query`, `latency_ms`, `empty_reason`, and per-snippet
+  `title`/`score`/`method`/`detail`. `api.js` validates and bounds these fields
+  before rendering them.
+- Telemetry belongs in the API/UI response only. Never concatenate scores,
+  methods, latency, or diagnostic detail into the Report Generator prompt.
 - An empty `snippets` array is a **valid result, not an error**. The UI shows the
   *No evidence found* badge and the exact not-found sentence, matching the
   Reporter's deterministic short-circuit.
@@ -139,5 +151,7 @@ Empty state shows before the first query. Loading shows skeletons with per-stage
 `mock-data.js` embeds the 10 sections from `knowledge_base.txt` verbatim and
 mirrors the real retrieval gate (title weight 1.5, body 1.0, keep ≥ 60% of the
 best score, plus the two-term sibling rule) closely enough to return the same
-sections as the Python tool for the golden queries. It is a fixture for demoing
-the UI, not a second implementation — delete it once the backend is wired up.
+sections as the Python tool for the golden queries. It also emits the same
+telemetry shape so score, method, latency, and empty-reason states remain
+demonstrable offline. It is a fixture for demoing the UI, not a second
+implementation — delete it once the backend is wired up.
