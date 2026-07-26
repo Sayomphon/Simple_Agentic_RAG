@@ -1,68 +1,12 @@
-/* ── Design tokens ──────────────────────────────────────────────────────── */
-
-:root {
-  --bg: #f6f7f9;
-  --surface: #ffffff;
-  --surface-sunken: #f8fafc;
-  --border: #e6e8ec;
-  --border-strong: #d5d9e0;
-
-  --text: #14161a;
-  --text-muted: #5b6472;
-  --text-faint: #8a93a1;
-
-  --accent: #4f46e5;
-  --accent-hover: #4338ca;
-  --accent-soft: #eef0fe;
-  --accent-ring: rgba(79, 70, 229, 0.28);
-
-  --ok: #0f7b52;
-  --ok-soft: #e6f4ee;
-  --warn: #8a5a06;
-  --warn-soft: #fdf3e0;
-  --danger: #b3261e;
-  --danger-soft: #fdeceb;
-
-  --radius-sm: 8px;
-  --radius: 12px;
-  --radius-lg: 16px;
-
-  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05);
-  --shadow: 0 1px 3px rgba(16, 24, 40, 0.06), 0 8px 24px -12px rgba(16, 24, 40, 0.14);
-
-  --font: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
-  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0e1116;
-    --surface: #161a21;
-    --surface-sunken: #1b202a;
-    --border: #262c37;
-    --border-strong: #333a47;
-
-    --text: #eef1f6;
-    --text-muted: #a3adbd;
-    --text-faint: #7b8494;
-
-    --accent: #8b85f5;
-    --accent-hover: #a09bf8;
-    --accent-soft: #201f3d;
-    --accent-ring: rgba(139, 133, 245, 0.35);
-
-    --ok: #4ade9d;
-    --ok-soft: #12291f;
-    --warn: #f0c26b;
-    --warn-soft: #2a2113;
-    --danger: #f88b83;
-    --danger-soft: #2c1717;
-
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-    --shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 8px 24px -12px rgba(0, 0, 0, 0.6);
-  }
-}
+/* ============================================================================
+   Simple Agentic RAG — component styles (Phase 2)
+   ----------------------------------------------------------------------------
+   Every visible value resolves to a token from tokens.css — no raw hex, no
+   raw px except 0/100% structural values. Dark theme needs NO overrides here:
+   color tokens are light-dark() pairs. Motion runs only through --duration-*
+   tokens, so prefers-reduced-motion collapses it at the token layer; the
+   catch-all at the bottom of this file is a safety net, not the mechanism.
+   ========================================================================== */
 
 /* ── Base ───────────────────────────────────────────────────────────────── */
 
@@ -78,11 +22,11 @@ html {
 
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font);
-  font-size: 15px;
-  line-height: 1.6;
+  background: var(--color-bg-page);
+  color: var(--color-text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -92,7 +36,8 @@ p,
 dl,
 dd,
 figure,
-pre {
+pre,
+ul {
   margin: 0;
 }
 
@@ -104,7 +49,7 @@ input {
 
 code,
 pre {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
 }
 
 /* Author `display` rules outrank the UA sheet, so `hidden` needs enforcing. */
@@ -124,48 +69,50 @@ pre {
   border: 0;
 }
 
+/* One focus treatment for every interactive element (non-negotiable). */
 :focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline: var(--focus-w) solid var(--color-focus-ring);
+  outline-offset: var(--focus-offset);
 }
 
 .app {
-  max-width: 880px;
+  max-width: var(--size-content-max);
   margin: 0 auto;
-  padding: 32px 20px 56px;
+  padding: var(--space-6) var(--space-4) var(--space-12);
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--space-5);
 }
 
+/* Cards separate by border, not shadow (elevation reserved for float). */
 .card {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--color-surface);
+  border: var(--border-w) solid var(--color-border-subtle);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
 }
 
-/* ── Compact bar ────────────────────────────────────────────────────────── */
-/* Sticky summary shown once the full query card scrolls out of view. */
+/* ── H · QueryBar — sticky compact summary ──────────────────────────────── */
 
 .compactbar {
   position: sticky;
   top: 0;
-  z-index: 20;
+  z-index: var(--z-sticky);
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 20px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
+  gap: var(--space-3);
+  height: var(--size-compactbar-h);
+  padding: 0 var(--space-4);
+  background: var(--color-surface);
+  border-bottom: var(--border-w) solid var(--color-border-subtle);
+  box-shadow: var(--shadow-raised);
 }
 
 .compactbar-query {
   flex: 1;
   min-width: 0;
-  font-size: 0.85rem;
-  font-weight: 500;
+  font-size: var(--type-body-sm-size);
+  line-height: var(--type-body-sm-line);
+  font-weight: var(--type-caption-weight);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -173,14 +120,10 @@ pre {
 
 .compactbar-timer {
   flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--type-caption-size);
   font-variant-numeric: tabular-nums;
-  font-size: 0.78rem;
-  color: var(--text-muted);
-}
-
-.compactbar .btn-secondary {
-  padding: 5px 12px;
-  font-size: 0.78rem;
+  color: var(--color-text-secondary);
 }
 
 /* ── Header ─────────────────────────────────────────────────────────────── */
@@ -189,94 +132,101 @@ pre {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--space-4);
   flex-wrap: wrap;
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   min-width: 0;
 }
 
 .brand-mark {
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
+  width: var(--size-brand-mark);
+  height: var(--size-brand-mark);
   flex: none;
-  border-radius: 11px;
-  background: var(--accent);
-  color: #fff;
-  box-shadow: var(--shadow-sm);
+  border-radius: var(--radius-md);
+  background: var(--color-accent-solid);
+  color: var(--color-on-accent-solid);
 }
 
 .brand-mark svg {
-  width: 20px;
-  height: 20px;
+  width: var(--space-5);
+  height: var(--space-5);
 }
 
 .brand-text h1 {
-  font-size: 1.15rem;
-  font-weight: 640;
-  letter-spacing: -0.015em;
+  font-size: var(--type-title-size);
+  line-height: var(--type-title-line);
+  font-weight: var(--type-title-weight);
+  letter-spacing: var(--type-title-tracking);
 }
 
 .brand-text p {
-  font-size: 0.82rem;
-  color: var(--text-muted);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  letter-spacing: var(--type-caption-tracking);
+  color: var(--color-text-secondary);
 }
 
 .source-pill {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text-muted);
-  font-size: 0.78rem;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border: var(--border-w) solid var(--color-border-strong);
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  font-weight: var(--type-caption-weight);
+  letter-spacing: var(--type-caption-tracking);
   cursor: pointer;
-  transition: border-color 0.15s ease, color 0.15s ease;
+  transition: border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
 }
 
 .source-pill:hover {
-  border-color: var(--accent);
-  color: var(--text);
+  border-color: var(--color-accent-fg);
+  color: var(--color-text-primary);
 }
 
 .source-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--text-faint);
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--color-pending-icon);
 }
 
 .source-pill[data-mode="live"] .source-dot {
-  background: var(--ok);
+  background: var(--color-success-icon);
 }
 
-/* ── Query card ─────────────────────────────────────────────────────────── */
+/* ── H · QueryBar — full card ───────────────────────────────────────────── */
 
 .query-card {
-  padding: 20px;
+  padding: var(--space-5);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .field-label {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  letter-spacing: 0.01em;
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  font-weight: var(--type-caption-weight);
+  letter-spacing: var(--type-caption-tracking);
+  color: var(--color-text-secondary);
 }
 
 .query-row {
   display: flex;
-  gap: 10px;
+  flex-direction: column;
+  gap: var(--space-2);
 }
 
 .input-wrap {
@@ -287,273 +237,309 @@ pre {
 
 .input-icon {
   position: absolute;
-  left: 13px;
+  left: var(--space-3);
   top: 50%;
   transform: translateY(-50%);
-  width: 17px;
-  height: 17px;
-  color: var(--text-faint);
+  width: var(--size-icon);
+  height: var(--size-icon);
+  color: var(--color-text-tertiary);
   pointer-events: none;
 }
 
 #query-input {
   width: 100%;
-  padding: 12px 14px 12px 40px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--surface-sunken);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  padding: var(--space-3);
+  padding-left: calc(var(--space-3) * 2 + var(--size-icon));
+  border: var(--border-w) solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  transition: border-color var(--duration-fast) var(--ease-standard);
 }
 
 #query-input::placeholder {
-  color: var(--text-faint);
+  color: var(--color-text-tertiary);
 }
 
-#query-input:focus {
-  outline: none;
-  border-color: var(--accent);
-  background: var(--surface);
-  box-shadow: 0 0 0 3px var(--accent-ring);
+#query-input:focus-visible {
+  border-color: var(--color-focus-ring);
 }
 
 .btn-primary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  min-width: 96px;
-  padding: 12px 20px;
+  gap: var(--space-2);
+  min-width: calc(var(--space-16) + var(--space-8));
+  padding: var(--space-3) var(--space-5);
   border: 0;
-  border-radius: var(--radius);
-  background: var(--accent);
-  color: #fff;
-  font-weight: 600;
+  border-radius: var(--radius-md);
+  background: var(--color-accent-solid);
+  color: var(--color-on-accent-solid);
+  font-weight: var(--type-title-weight);
   cursor: pointer;
-  transition: background 0.15s ease, opacity 0.15s ease;
+  transition: background-color var(--duration-fast) var(--ease-standard);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: var(--accent-hover);
+  background: color-mix(in srgb, var(--color-accent-solid) 85%, var(--color-text-primary));
 }
 
 .btn-primary:disabled {
-  opacity: 0.6;
+  background: var(--color-pending-bg);
+  color: var(--color-pending-fg);
   cursor: not-allowed;
 }
 
 .btn-timer {
+  font-family: var(--font-mono);
+  font-size: var(--type-caption-size);
   font-variant-numeric: tabular-nums;
-  font-size: 0.82rem;
-  font-weight: 600;
-  opacity: 0.9;
+}
+
+/* Run headline: the single always-on-screen answer to "where is this run?"
+   while the full query card is visible (the compact bar covers scrolled-away). */
+.run-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.run-status-detail {
+  min-width: 0;
+  font-size: var(--type-body-sm-size);
+  line-height: var(--type-body-sm-line);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .chip {
-  padding: 6px 12px;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
+  padding: var(--space-1) var(--space-3);
+  border: var(--border-w) solid var(--color-border-strong);
+  border-radius: var(--radius-full);
   background: transparent;
-  color: var(--text-muted);
-  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  letter-spacing: var(--type-caption-tracking);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: border-color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
 }
 
 .chip:hover:not(:disabled) {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
+  border-color: var(--color-accent-border);
+  background: var(--color-accent-bg);
+  color: var(--color-accent-fg);
 }
 
 .chip:disabled {
-  opacity: 0.5;
+  border-color: var(--color-border-subtle);
+  color: var(--color-text-tertiary);
   cursor: not-allowed;
 }
 
-/* ── Empty & error states ───────────────────────────────────────────────── */
+/* ── Shared buttons ─────────────────────────────────────────────────────── */
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  flex: none;
+  padding: var(--space-2) var(--space-4);
+  border: var(--border-w) solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: var(--type-body-sm-size);
+  font-weight: var(--type-caption-weight);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--color-accent-fg);
+  color: var(--color-accent-fg);
+}
+
+.btn-secondary:disabled {
+  border-color: var(--color-border-subtle);
+  color: var(--color-text-tertiary);
+  cursor: not-allowed;
+}
+
+.btn-icon {
+  padding: var(--space-1) var(--space-2);
+  border: var(--border-w) solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  letter-spacing: var(--type-caption-tracking);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.btn-icon:hover {
+  border-color: var(--color-accent-fg);
+  color: var(--color-accent-fg);
+}
+
+/* ── First-visit empty state ────────────────────────────────────────────── */
 
 .state-card {
-  padding: 40px 24px;
+  padding: var(--space-10) var(--space-6);
   text-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
 }
 
 .state-icon {
   display: grid;
   place-items: center;
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  background: var(--accent-soft);
-  color: var(--accent);
+  width: var(--space-10);
+  height: var(--space-10);
+  border-radius: var(--radius-full);
+  background: var(--color-accent-bg);
+  color: var(--color-accent-icon);
   flex: none;
 }
 
 .state-icon svg {
-  width: 21px;
-  height: 21px;
+  width: var(--space-5);
+  height: var(--space-5);
 }
 
 .state-card h2 {
-  font-size: 0.98rem;
-  font-weight: 620;
+  font-size: var(--type-body-size);
+  font-weight: var(--type-title-weight);
 }
 
 .state-card p {
   max-width: 46ch;
-  font-size: 0.87rem;
-  color: var(--text-muted);
+  font-size: var(--type-body-sm-size);
+  line-height: var(--type-body-sm-line);
+  color: var(--color-text-secondary);
 }
+
+/* ── G · ErrorBanner ────────────────────────────────────────────────────── */
 
 .error-banner {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 18px 20px;
-  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
-  background: var(--danger-soft);
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-color: var(--color-danger-border);
+  background: var(--color-danger-bg);
 }
 
 .error-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
 }
 
 .error-head .error-icon {
-  width: 20px;
-  height: 20px;
+  width: var(--size-icon);
+  height: var(--size-icon);
   background: transparent;
-  color: var(--danger);
+  color: var(--color-danger-icon);
   flex: none;
 }
 
 .error-head .error-icon svg {
-  width: 18px;
-  height: 18px;
+  width: var(--size-icon);
+  height: var(--size-icon);
 }
 
 .error-head h2 {
   flex: 1;
   min-width: 0;
-  font-size: 0.92rem;
-  font-weight: 620;
-  color: var(--danger);
+  font-size: var(--type-body-size);
+  font-weight: var(--type-title-weight);
+  color: var(--color-danger-fg);
 }
 
 .error-code {
   flex: none;
-  padding: 2px 8px;
-  border-radius: 5px;
-  background: var(--surface);
-  border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--border));
-  color: var(--danger);
-  font-family: var(--mono);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  border: var(--border-w) solid var(--color-danger-border);
+  color: var(--color-danger-fg);
+  font-family: var(--font-mono);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  letter-spacing: var(--type-overline-tracking);
 }
 
 .error-message {
-  font-size: 0.87rem;
-  color: var(--text-muted);
+  font-size: var(--type-body-sm-size);
+  line-height: var(--type-body-sm-line);
+  color: var(--color-text-primary);
   word-break: break-word;
 }
 
 .error-details summary {
   cursor: pointer;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--text-muted);
+  font-size: var(--type-caption-size);
+  font-weight: var(--type-caption-weight);
+  letter-spacing: var(--type-caption-tracking);
+  color: var(--color-text-secondary);
   user-select: none;
 }
 
 .error-details summary:hover {
-  color: var(--danger);
+  color: var(--color-danger-fg);
 }
 
 .error-detail-meta {
-  margin: 10px 0 0;
+  margin: var(--space-2) 0 0;
 }
 
 .error-details pre#error-raw {
-  margin-top: 8px;
-  padding: 10px;
+  margin-top: var(--space-2);
+  padding: var(--space-3);
   border-radius: var(--radius-sm);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  font-size: 0.75rem;
-  color: var(--text-muted);
+  background: var(--color-surface);
+  border: var(--border-w) solid var(--color-border-subtle);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  color: var(--color-text-secondary);
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 160px;
+  max-height: var(--size-error-raw-max);
   overflow-y: auto;
 }
 
 .error-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: var(--space-3);
 }
 
 .error-retry-status {
-  font-size: 0.78rem;
-  color: var(--text-muted);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-secondary);
 }
 
-.btn-ghost {
-  padding: 7px 14px;
-  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--danger);
-  font-size: 0.82rem;
-  font-weight: 600;
-  cursor: pointer;
-  flex: none;
-}
-
-.btn-ghost:hover {
-  background: color-mix(in srgb, var(--danger) 10%, transparent);
-}
-
-.btn-secondary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  flex: none;
-  padding: 8px 16px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--text);
-  font-size: 0.84rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.btn-secondary:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.btn-secondary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* ── Pipeline rail ──────────────────────────────────────────────────────── */
+/* ── B · TimelineRail ───────────────────────────────────────────────────── */
 
 .pipeline {
   list-style: none;
@@ -561,90 +547,184 @@ pre {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--space-4);
 }
 
 .step {
   position: relative;
-  padding-left: 52px;
+  padding-left: calc(var(--size-rail-col) + var(--space-3));
 }
 
-/* Connector line between markers. */
-.step:not(:last-child)::before {
+/* Connector ABOVE this step's marker — carries THIS step's status color, so
+   scanning the rail alone reads progress (spec B). Starts at the top edge of
+   this <li> minus the pipeline gap, meeting the previous step's tail exactly. */
+.step + .step::before {
   content: "";
   position: absolute;
-  left: 17px;
-  top: 36px;
-  bottom: -20px;
-  width: 2px;
-  background: var(--border-strong);
+  left: calc(var(--size-rail-col) / 2 - var(--size-rail-line) / 2);
+  top: calc(-1 * var(--space-4));
+  height: calc(var(--space-4) + var(--size-marker-top));
+  width: var(--size-rail-line);
+}
+
+/* Tail BELOW the marker — continues this step's color down to the next <li>. */
+.step:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: calc(var(--size-rail-col) / 2 - var(--size-rail-line) / 2);
+  top: calc(var(--size-marker-top) + var(--size-marker));
+  bottom: 0;
+  width: var(--size-rail-line);
+}
+
+/* Not-yet-reached: dashed but still visible without hunting — border-strong
+   keeps ≥3:1 against every surface, and the dashing keeps it quiet. Also the
+   neutral "Not run" look. */
+.step::before,
+.step::after {
+  background: repeating-linear-gradient(
+    180deg,
+    var(--color-border-strong) 0 var(--space-1),
+    transparent var(--space-1) var(--space-2)
+  );
+}
+
+/* Completed spans: solid, in the section's own status color. */
+.step[data-state="done"]::before,
+.step[data-state="done"]::after {
+  background: var(--color-success-icon);
+}
+
+.step[data-state="received"]::before,
+.step[data-state="received"]::after {
+  background: var(--color-info-icon);
+}
+
+.step[data-state="empty"]::before,
+.step[data-state="empty"]::after {
+  background: var(--color-warning-icon);
+}
+
+.step[data-state="error"]::before,
+.step[data-state="error"]::after {
+  background: var(--color-danger-icon);
+}
+
+/* Running: a faint gradient sweeps INTO the node; the tail below stays dashed
+   because nothing has flowed past this step yet. */
+.step[data-state="running"]::before {
+  background: linear-gradient(
+    180deg,
+    var(--color-border-subtle),
+    var(--color-running-icon),
+    var(--color-border-subtle)
+  );
+  background-size: 100% 200%;
+  animation: rail-sweep var(--duration-loop) linear infinite;
+}
+
+@keyframes rail-sweep {
+  from {
+    background-position: 0 200%;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .step[data-state="running"]::before {
+    background: var(--color-running-border);
+    animation: none;
+  }
 }
 
 .step-marker {
   position: absolute;
-  left: 0;
-  top: 4px;
+  left: calc((var(--size-rail-col) - var(--size-marker)) / 2);
+  top: var(--size-marker-top);
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
-  border: 1px solid var(--border-strong);
-  border-radius: 50%;
-  background: var(--surface);
-  color: var(--text-faint);
-  box-shadow: var(--shadow-sm);
-  transition: all 0.25s ease;
+  width: var(--size-marker);
+  height: var(--size-marker);
+  border: var(--border-w) solid var(--color-border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  color: var(--color-text-tertiary);
+  transition: background-color var(--duration-base) var(--ease-standard),
+    border-color var(--duration-base) var(--ease-standard),
+    color var(--duration-base) var(--ease-standard);
 }
 
 .step-marker svg {
-  width: 17px;
-  height: 17px;
+  width: var(--size-icon-sm);
+  height: var(--size-icon-sm);
 }
 
 .step[data-state="running"] .step-marker {
-  border-color: var(--accent);
-  color: var(--accent);
-  box-shadow: 0 0 0 4px var(--accent-ring);
+  border-color: var(--color-running-icon);
+  background: var(--color-running-bg);
+  color: var(--color-running-icon);
+  box-shadow: 0 0 0 var(--space-1) var(--color-running-bg);
 }
 
 .step[data-state="done"] .step-marker {
-  border-color: transparent;
-  background: var(--accent);
-  color: #fff;
+  border-color: var(--color-success-border);
+  background: var(--color-success-bg);
+  color: var(--color-success-icon);
+}
+
+.step[data-state="received"] .step-marker {
+  border-color: var(--color-info-border);
+  background: var(--color-info-bg);
+  color: var(--color-info-icon);
 }
 
 .step[data-state="empty"] .step-marker {
-  border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
-  color: var(--warn);
+  border-color: var(--color-warning-border);
+  background: var(--color-warning-bg);
+  color: var(--color-warning-icon);
 }
 
 .step[data-state="error"] .step-marker {
-  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
-  color: var(--danger);
+  border-color: var(--color-danger-border);
+  background: var(--color-danger-bg);
+  color: var(--color-danger-icon);
 }
+
+.step[data-state="notrun"] .step-marker {
+  border-color: var(--color-pending-border);
+  background: var(--color-pending-bg);
+  color: var(--color-pending-icon);
+}
+
+/* ── C · StepCard ───────────────────────────────────────────────────────── */
 
 .step-card {
-  padding: 16px 18px;
+  padding: var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-3);
 }
 
-.step[data-state="waiting"] .step-card {
-  opacity: 0.75;
+/* Idle steps stay quiet through color, never opacity. */
+.step[data-state="waiting"] .step-title,
+.step[data-state="notrun"] .step-title {
+  color: var(--color-text-tertiary);
 }
 
 .step-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
+  cursor: pointer;
 }
 
 .step-toggle {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
   padding: 0;
   border: 0;
@@ -656,10 +736,10 @@ pre {
 
 .chevron {
   flex: none;
-  width: 15px;
-  height: 15px;
-  color: var(--text-faint);
-  transition: transform 0.15s ease;
+  width: var(--size-icon-sm);
+  height: var(--size-icon-sm);
+  color: var(--color-text-tertiary);
+  transition: transform var(--duration-fast) var(--ease-standard);
 }
 
 .step-toggle[aria-expanded="false"] .chevron {
@@ -667,34 +747,41 @@ pre {
 }
 
 .step-toggle:hover .chevron {
-  color: var(--accent);
+  color: var(--color-accent-icon);
 }
 
 .step-heading {
   display: flex;
   flex-direction: column;
-  gap: 2px;
   min-width: 0;
 }
 
+/* Eyebrow hugs its title (grouping); the body is pushed away (separation). */
 .step-eyebrow {
-  font-size: 0.68rem;
-  font-weight: 650;
-  letter-spacing: 0.07em;
+  margin-bottom: var(--stack-overline-to-title);
+  font-size: var(--type-overline-size);
+  line-height: var(--type-overline-line);
+  font-weight: var(--type-overline-weight);
+  letter-spacing: var(--type-overline-tracking);
   text-transform: uppercase;
-  color: var(--text-faint);
+  color: var(--color-text-tertiary);
 }
 
+/* card-title role: one size below the page h1 so the five static step names
+   stop out-shouting the dynamic status signals. */
 .step-title {
-  font-size: 0.97rem;
-  font-weight: 620;
-  letter-spacing: -0.01em;
+  font-size: var(--type-card-title-size);
+  line-height: var(--type-card-title-line);
+  font-weight: var(--type-card-title-weight);
+  letter-spacing: var(--type-card-title-tracking);
 }
 
+/* Card gap (12px) already equals --stack-title-to-body, so the header→body
+   separation lands on the type-rhythm token with no extra padding. */
 .step-body-inner {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-3);
 }
 
 .step-card.is-collapsed .step-body {
@@ -704,109 +791,193 @@ pre {
 .head-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .step-note {
-  font-size: 0.83rem;
-  color: var(--text-muted);
+  font-size: var(--type-body-sm-size);
+  line-height: var(--type-body-sm-line);
+  color: var(--color-text-secondary);
 }
 
-/* ── Badges ─────────────────────────────────────────────────────────────── */
+/* ── A · StatusBadge ────────────────────────────────────────────────────── */
 
+/* Badges are the per-step status signal: sized one notch above caption so
+   they survive an arm's-length scan instead of reading as fine print. */
 .badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1);
   flex: none;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: var(--surface-sunken);
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-  font-size: 0.72rem;
-  font-weight: 600;
+  height: var(--space-6);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-full);
+  border: var(--border-w) solid var(--color-pending-border);
+  background: var(--color-pending-bg);
+  color: var(--color-pending-fg);
+  font-size: var(--type-body-sm-size);
+  font-weight: var(--type-caption-weight);
   white-space: nowrap;
 }
 
+.badge-icon {
+  width: var(--size-icon-sm);
+  height: var(--size-icon-sm);
+  flex: none;
+  color: var(--color-pending-icon);
+}
+
+.badge-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-pending-icon);
+}
+
 .badge[data-state="running"] {
-  background: var(--accent-soft);
-  border-color: transparent;
-  color: var(--accent);
+  background: var(--color-running-bg);
+  border-color: var(--color-running-border);
+  color: var(--color-running-fg);
 }
 
-.badge[data-state="running"]::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  animation: pulse 1.2s ease-in-out infinite;
+.badge[data-state="running"] .badge-icon {
+  color: var(--color-running-icon);
 }
 
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.35;
-    transform: scale(0.75);
-  }
+.badge[data-state="running"] .badge-count {
+  color: var(--color-running-icon);
 }
 
 .badge[data-state="done"] {
-  background: var(--ok-soft);
-  border-color: transparent;
-  color: var(--ok);
+  background: var(--color-success-bg);
+  border-color: var(--color-success-border);
+  color: var(--color-success-fg);
+}
+
+.badge[data-state="done"] .badge-icon,
+.badge[data-state="done"] .badge-count {
+  color: var(--color-success-icon);
+}
+
+.badge[data-state="received"] {
+  background: var(--color-info-bg);
+  border-color: var(--color-info-border);
+  color: var(--color-info-fg);
+}
+
+.badge[data-state="received"] .badge-icon,
+.badge[data-state="received"] .badge-count {
+  color: var(--color-info-icon);
 }
 
 .badge[data-state="empty"] {
-  background: var(--warn-soft);
-  border-color: transparent;
-  color: var(--warn);
+  background: var(--color-warning-bg);
+  border-color: var(--color-warning-border);
+  color: var(--color-warning-fg);
+}
+
+.badge[data-state="empty"] .badge-icon,
+.badge[data-state="empty"] .badge-count {
+  color: var(--color-warning-icon);
 }
 
 .badge[data-state="error"] {
-  background: var(--danger-soft);
-  border-color: transparent;
-  color: var(--danger);
+  background: var(--color-danger-bg);
+  border-color: var(--color-danger-border);
+  color: var(--color-danger-fg);
+}
+
+.badge[data-state="error"] .badge-icon,
+.badge[data-state="error"] .badge-count {
+  color: var(--color-danger-icon);
+}
+
+/* Spinner: the arc spins; under reduced motion it swaps for a steady filled
+   dot (a static "in progress" mark, not a frozen half-circle). */
+.badge-icon .spin {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: spin var(--duration-loop) linear infinite;
+}
+
+.badge-icon .spin-static {
+  display: none;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .badge-icon .spin {
+    display: none;
+  }
+
+  .badge-icon .spin-static {
+    display: block;
+  }
 }
 
 /* ── Stage content ──────────────────────────────────────────────────────── */
 
 .query-echo {
-  font-size: 1rem;
-  font-weight: 500;
-  color: var(--text);
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+  color: var(--color-text-primary);
 }
 
 .query-echo:empty::after {
   content: "—";
-  color: var(--text-faint);
+  color: var(--color-text-tertiary);
+}
+
+/* Horizontally scrolling mono wells share one wrapper: scroll inside,
+   overflow fade pinned to the wrapper's right edge (spec D). The fade only
+   shows when JS has measured real overflow (.has-overflow). */
+.mono-scroll {
+  position: relative;
+  min-width: 0;
+}
+
+.mono-scroll::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: var(--size-fade-x);
+  background: linear-gradient(to right, transparent, var(--color-surface-2));
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+.mono-scroll.has-overflow::after {
+  opacity: 1;
 }
 
 .tool-call {
-  padding: 11px 13px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-sunken);
-  font-size: 0.79rem;
-  color: var(--text-muted);
+  padding: var(--space-3);
+  border: var(--border-w) solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  font-size: var(--type-mono-size);
+  line-height: var(--type-mono-line);
+  color: var(--color-text-secondary);
   overflow-x: auto;
   white-space: pre;
 }
 
 .tool-call .fn {
-  color: var(--accent);
-  font-weight: 600;
+  color: var(--color-accent-fg);
+  font-weight: var(--type-caption-weight);
 }
 
+/* Metrics as definition lists: 2-up grid on mobile, inline row on desktop. */
 .meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 20px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2) var(--space-5);
 }
 
 .meta:empty {
@@ -814,130 +985,57 @@ pre {
 }
 
 #answer-meta {
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+  border-top: var(--border-w) solid var(--color-border-subtle);
 }
 
-.meta div {
+.meta > div {
   display: flex;
-  align-items: baseline;
-  gap: 6px;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .meta dt {
-  font-size: 0.74rem;
-  color: var(--text-faint);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  letter-spacing: var(--type-caption-tracking);
+  color: var(--color-text-tertiary);
 }
 
 .meta dd {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--text);
-}
-
-/* ── Evidence ───────────────────────────────────────────────────────────── */
-
-.evidence-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.snippet {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-sunken);
-  overflow: hidden;
-}
-
-.snippet-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-}
-
-.snippet-num {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  flex: none;
-  border-radius: 6px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 0.7rem;
-  font-weight: 700;
-}
-
-.snippet-title {
-  flex: 1;
-  min-width: 0;
-  font-size: 0.82rem;
-  font-weight: 620;
+  font-size: var(--type-body-sm-size);
+  line-height: var(--type-body-sm-line);
+  font-weight: var(--type-caption-weight);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.snippet-tag {
-  padding: 2px 7px;
-  border-radius: 5px;
-  background: var(--surface-sunken);
-  border: 1px solid var(--border);
-  color: var(--text-faint);
-  font-family: var(--mono);
-  font-size: 0.66rem;
+.meta dd .btn-icon {
+  font-family: var(--font-mono);
 }
 
-.btn-icon {
-  padding: 3px 9px;
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 0.72rem;
-  cursor: pointer;
-  transition: all 0.15s ease;
+/* Headline metrics ("Grounded in", "Elapsed") read one size up — the trust
+   numbers must pop before the bookkeeping (model, tokens, cost, trace). */
+.meta [data-emphasis="high"] dd {
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+  font-weight: var(--type-title-weight);
 }
 
-.btn-icon:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
+/* ── D · EvidenceSnippet ────────────────────────────────────────────────── */
 
-.snippet pre {
-  margin: 0;
-  padding: 12px;
-  font-size: 0.78rem;
-  line-height: 1.62;
-  color: var(--text-muted);
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 260px;
-  overflow-y: auto;
-}
-
-.evidence-none {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px;
-  border: 1px dashed color-mix(in srgb, var(--warn) 40%, var(--border));
-  border-radius: var(--radius);
-  background: var(--warn-soft);
-  color: var(--warn);
-  font-size: 0.85rem;
-}
-
+/* The clamp region reserves its collapsed height permanently: skeleton,
+   loaded, and empty states all occupy >= this box, so no layout shift. */
 .clamp {
   position: relative;
+  min-height: var(--size-collapse-max);
 }
 
 .clamp.is-clamped {
-  max-height: 480px;
+  max-height: var(--size-collapse-max);
   overflow: hidden;
 }
 
@@ -947,85 +1045,270 @@ pre {
   left: 0;
   right: 0;
   bottom: 0;
-  height: 64px;
-  background: linear-gradient(to bottom, transparent, var(--surface));
+  height: var(--size-fade-y);
+  background: linear-gradient(to bottom, transparent, var(--color-surface));
   pointer-events: none;
 }
 
 .clamp-toggle {
   align-self: flex-start;
-  margin-top: 4px;
-  padding: 7px 14px;
-  border: 1px solid var(--border-strong);
+  padding: var(--space-2) var(--space-4);
+  border: var(--border-w) solid var(--color-border-strong);
   border-radius: var(--radius-sm);
-  background: var(--surface-sunken);
-  color: var(--accent);
-  font-size: 0.8rem;
-  font-weight: 600;
+  background: var(--color-surface);
+  color: var(--color-accent-fg);
+  font-size: var(--type-body-sm-size);
+  font-weight: var(--type-caption-weight);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: border-color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
 }
 
 .clamp-toggle:hover {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+  border-color: var(--color-accent-border);
+  background: var(--color-accent-bg);
 }
 
-/* ── Final answer ───────────────────────────────────────────────────────── */
+.evidence-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
 
+.snippet {
+  border: var(--border-w) solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+  overflow: hidden;
+  transition: border-color var(--duration-base) var(--ease-standard),
+    box-shadow var(--duration-base) var(--ease-standard);
+}
+
+/* Citation hover cross-highlight (spec E). */
+.snippet.is-ref {
+  border-color: var(--color-accent-border);
+}
+
+/* Citation jump flash: a focus-token ring that clears after a beat. */
+.snippet.is-flash {
+  border-color: var(--color-accent-border);
+  box-shadow: 0 0 0 var(--focus-w) var(--color-focus-ring);
+}
+
+.snippet-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--border-w) solid var(--color-border-subtle);
+  background: var(--color-surface);
+}
+
+.snippet-num {
+  display: grid;
+  place-items: center;
+  width: var(--space-5);
+  height: var(--space-5);
+  flex: none;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-bg);
+  color: var(--color-accent-fg);
+  font-size: var(--type-caption-size);
+  font-weight: var(--type-overline-weight);
+  font-variant-numeric: tabular-nums;
+}
+
+.snippet-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--type-body-sm-size);
+  font-weight: var(--type-caption-weight);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Retrieval score — the number an AI engineer scans for first (spec D). */
+.snippet-score {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--type-caption-size);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-secondary);
+}
+
+.snippet-tag {
+  flex: none;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  border: var(--border-w) solid var(--color-border-subtle);
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}
+
+/* Raw sections scroll horizontally instead of wrapping (spec D). */
+.snippet pre {
+  margin: 0;
+  padding: var(--space-3);
+  font-size: var(--type-mono-size);
+  line-height: var(--type-mono-line);
+  color: var(--color-text-secondary);
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* ── F · EmptyState (no evidence above threshold) ───────────────────────── */
+
+.evidence-none {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: var(--border-w) dashed var(--color-warning-border);
+  border-radius: var(--radius-md);
+  background: var(--color-warning-bg);
+}
+
+.evidence-none-icon {
+  flex: none;
+  width: var(--size-icon);
+  height: var(--size-icon);
+  color: var(--color-warning-icon);
+}
+
+.evidence-none-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.evidence-none-title {
+  font-size: var(--type-body-sm-size);
+  line-height: var(--type-body-sm-line);
+  font-weight: var(--type-caption-weight);
+  color: var(--color-warning-fg);
+}
+
+.evidence-none-reason {
+  font-size: var(--type-body-sm-size);
+  line-height: var(--type-body-sm-line);
+  color: var(--color-warning-fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.evidence-none-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding-top: var(--space-1);
+}
+
+.kb-topics {
+  margin: 0;
+  padding: var(--space-2) 0 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+}
+
+.kb-topics li {
+  padding: 0 var(--space-2);
+  border: var(--border-w) solid var(--color-warning-border);
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}
+
+/* ── E · FinalAnswer + Citations ────────────────────────────────────────── */
+
+/* The destination card carries a permanent status bar on its leading edge —
+   full width from the start, so changing only its COLOR on completion can
+   never cause a layout shift. */
 .answer-card {
-  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-color: var(--color-accent-border);
+  border-inline-start-width: var(--size-rail-line);
+  border-inline-start-color: var(--color-border-strong);
+}
+
+.step[data-state="done"] .answer-card {
+  border-inline-start-color: var(--color-success-icon);
+}
+
+.step[data-state="empty"] .answer-card {
+  border-inline-start-color: var(--color-warning-icon);
+}
+
+.step[data-state="error"] .answer-card {
+  border-inline-start-color: var(--color-danger-icon);
 }
 
 .answer-body {
-  font-size: 0.94rem;
-  color: var(--text);
+  min-height: var(--size-answer-reserve);
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+  color: var(--color-text-primary);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-3);
 }
 
 .answer-body ul {
   margin: 0;
-  padding-left: 20px;
+  padding-left: var(--space-5);
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--space-1);
 }
 
 .answer-body.is-notfound {
-  color: var(--warn);
-  font-weight: 500;
+  color: var(--color-warning-fg);
 }
 
+/* Citation chips are buttons: click scrolls to the matching evidence snippet,
+   expanding it if collapsed, then flashes a ring (spec E). */
 .cite {
   display: inline-block;
-  padding: 1px 7px;
-  border-radius: 5px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 0.78em;
-  font-weight: 600;
+  padding: 0 var(--space-2);
+  border: var(--border-w) solid var(--color-accent-border);
+  border-radius: var(--radius-full);
+  background: var(--color-accent-bg);
+  color: var(--color-accent-fg);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  font-weight: var(--type-caption-weight);
   white-space: nowrap;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-standard);
 }
 
-/* ── Skeletons ──────────────────────────────────────────────────────────── */
+.cite:hover {
+  border-color: var(--color-accent-fg);
+}
+
+/* ── Skeletons (height reserved up front — no shift on load) ────────────── */
 
 .skeleton {
-  height: 11px;
-  border-radius: 5px;
+  height: var(--size-skeleton-line);
+  border-radius: var(--radius-sm);
   background: linear-gradient(
     90deg,
-    var(--surface-sunken) 25%,
-    var(--border) 50%,
-    var(--surface-sunken) 75%
+    var(--color-surface-2) 25%,
+    var(--color-border-subtle) 50%,
+    var(--color-surface-2) 75%
   );
   background-size: 200% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
+  animation: shimmer var(--duration-loop) var(--ease-standard) infinite;
 }
 
 .skeleton + .skeleton {
-  margin-top: 8px;
+  margin-top: var(--space-2);
 }
 
 .skeleton.short {
@@ -1041,64 +1324,41 @@ pre {
 /* ── Footer ─────────────────────────────────────────────────────────────── */
 
 .app-footer {
-  padding-top: 4px;
+  padding-top: var(--space-1);
   text-align: center;
-  font-size: 0.76rem;
-  color: var(--text-faint);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  letter-spacing: var(--type-caption-tracking);
+  color: var(--color-text-tertiary);
 }
 
 .app-footer code {
-  font-size: 0.95em;
+  font-size: var(--type-caption-size);
 }
 
-/* ── Responsive ─────────────────────────────────────────────────────────── */
+/* ── Responsive: ≥768px (rail/marker sizes switch inside tokens.css) ────── */
 
-@media (max-width: 620px) {
-  .app {
-    padding: 20px 14px 40px;
-    gap: 16px;
-  }
-
+@media (min-width: 768px) {
   .query-row {
-    flex-direction: column;
-  }
-
-  .btn-primary {
-    width: 100%;
-  }
-
-  .step {
-    padding-left: 40px;
-  }
-
-  .step-marker {
-    width: 28px;
-    height: 28px;
+    flex-direction: row;
+    gap: var(--space-3);
   }
 
   .step-marker svg {
-    width: 14px;
-    height: 14px;
+    width: var(--size-icon);
+    height: var(--size-icon);
   }
 
-  .step:not(:last-child)::before {
-    left: 13px;
-    top: 30px;
-  }
-
-  .step-head {
-    align-items: flex-start;
-  }
-
-  .step-card {
-    padding: 14px;
-  }
-
-  .snippet pre {
-    font-size: 0.72rem;
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-5);
   }
 }
 
+/* ── Reduced motion: safety net ─────────────────────────────────────────────
+   Every animation above runs on --duration-* tokens, which collapse to
+   0.01ms under reduced motion; this catch-all guards anything that slips. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

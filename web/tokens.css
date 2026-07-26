@@ -175,11 +175,19 @@
   --type-overline-weight:  600;
   --type-overline-tracking: 0.08em;
 
-  /* title — card/section headings: "data_retriever", panel headers */
+  /* title — the page h1 ONLY. Cards must not compete with it: five 20px
+     card headings turn static labels into the loudest thing on screen. */
   --type-title-size:    20px;
   --type-title-line:    26px;
   --type-title-weight:  600;
   --type-title-tracking: -0.012em;
+
+  /* card-title — step/card headings. One size below title so dynamic
+     signals (badges, counts, scores) can win the 2-second scan. */
+  --type-card-title-size:    16px;
+  --type-card-title-line:    22px;
+  --type-card-title-weight:  600;
+  --type-card-title-tracking: -0.008em;
 
   /* body — default UI text, answer prose */
   --type-body-size:    14px;
@@ -257,6 +265,8 @@
   --duration-fast: 120ms;
   --duration-base: 200ms;
   --duration-slow: 320ms;
+  /* loop — continuous indicators only (spinner, skeleton shimmer, rail sweep) */
+  --duration-loop: 1400ms;
 
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);   /* most transitions */
   --ease-enter:    cubic-bezier(0.1, 0, 0, 1);   /* elements appearing */
@@ -273,7 +283,9 @@
   --size-content-max: 880px;  /* page column */
   --size-rail-col:    24px;   /* timeline rail gutter (narrow on mobile) */
   --size-marker:      22px;   /* rail node diameter */
-  --size-rail-line:   2px;    /* connector thickness */
+  --size-rail-line:   3px;    /* connector thickness — must beat the 1px card
+                                 hairlines it sits next to, or the rail loses
+                                 the at-a-glance progress read */
   --size-collapse-max: 240px; /* clamp height for long card bodies; the
                                  evidence skeleton reserves this same height,
                                  so skeleton → loaded causes no layout shift */
@@ -285,6 +297,12 @@
   --size-icon:    16px;
   --size-icon-sm: 12px;       /* badge glyphs */
   --size-compactbar-h: 48px;  /* sticky compact query bar */
+  --size-brand-mark: 36px;    /* header logo tile */
+  --size-error-raw-max: 160px;/* scroll clamp on the raw-error <pre> */
+  /* Vertical offset of the rail marker so its center aligns with the card
+     header's optical center: card pad (16) + (overline 16 + stack 4 +
+     card-title 22)/2 − marker/2. Changes with --size-marker at 768px. */
+  --size-marker-top: 26px;
 
   --border-w:     1px;
   --focus-w:      2px;        /* focus ring — pair with --color-focus-ring */
@@ -298,7 +316,8 @@
 @media (min-width: 768px) {
   :root {
     --size-rail-col: 40px;
-    --size-marker:   30px;
+    --size-marker:   32px;
+    --size-marker-top: 21px; /* header optical center (37px) − marker/2 */
   }
 }
 
@@ -310,5 +329,6 @@
     --duration-fast: 0.01ms;
     --duration-base: 0.01ms;
     --duration-slow: 0.01ms;
+    --duration-loop: 0.01ms;
   }
 }

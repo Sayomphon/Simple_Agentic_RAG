@@ -26,6 +26,8 @@
     endpoint: "/api/query",
     /** Shown as metadata only; the backend decides the real model. */
     model: "gpt-5-mini",
+    /** Display-only cost estimate basis (USD per 1M tokens). Not billing data. */
+    pricing: { inputPer1M: 0.25, outputPer1M: 2.0, currency: "USD" },
     timeoutMs: 60000
   };
 
@@ -77,6 +79,7 @@
 
   /** Fixture run with realistic pacing so each stage transition is visible. */
   function runMock(query, emit, signal) {
+    var detail;
     var snippets;
 
     function throwIfCancelled() {
@@ -87,7 +90,8 @@
     return wait(650)
       .then(function () {
         throwIfCancelled();
-        snippets = global.RAG_MOCK.retrieve(query);
+        detail = global.RAG_MOCK.retrieveDetailed(query);
+        snippets = detail.snippets;
         emit("retriever", "done");
         emit("evidence", snippets.length ? "done" : "empty");
         if (!snippets.length) return null;
@@ -98,7 +102,15 @@
       .then(function () {
         throwIfCancelled();
         var report = global.RAG_MOCK.report(query, snippets);
-        return normalize({ query: query, snippets: snippets, report: report }, query);
+        var result = normalize({ query: query, snippets: snippets, report: report }, query);
+        // Additive display data (per-snippet scores + gate). The base contract
+        // above is unchanged; the live backend does not expose scores yet.
+        result.retrieval = {
+          scores: detail.scores,
+          bestScore: detail.bestScore,
+          cutoff: detail.cutoff
+        };
+        return result;
       });
   }
 
@@ -225,7 +237,9 @@
         report: notFound ? NOT_FOUND_SENTENCE : finished.report,
         notFound: notFound,
         source: mode,
-        durationMs: Date.now() - startedAt
+        durationMs: Date.now() - startedAt,
+        /* Optional scoring evidence — present on mock runs, null on live. */
+        retrieval: finished.retrieval || null
       };
     });
   }

@@ -10,7 +10,7 @@
     />
     <link
       rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Cpath d='M9 11h14M9 16h14M9 21h8' stroke='white' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%233D63DD'/%3E%3Cpath d='M9 11h14M9 16h14M9 21h8' stroke='white' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E"
     />
     <link rel="stylesheet" href="tokens.css" />
     <link rel="stylesheet" href="styles.css" />
@@ -79,6 +79,13 @@
             <span class="btn-timer" id="run-timer" hidden>0.0s</span>
           </button>
         </form>
+
+        <!-- Run headline: populated by app.js updateHeadline(); hidden until
+             the first run so the card starts as a plain query form. -->
+        <div class="run-status" id="run-status" hidden>
+          <span class="badge" id="run-status-badge" data-state="waiting"></span>
+          <span class="run-status-detail" id="run-status-detail"></span>
+        </div>
 
         <div class="chips" id="sample-chips" aria-label="Sample queries"></div>
       </section>
@@ -193,7 +200,7 @@
                   Calls the retrieval tool once and hands its output on untouched — it never
                   answers, summarises, or rewrites.
                 </p>
-                <pre class="tool-call" id="stage-tool-call"><code></code></pre>
+                <div class="mono-scroll"><pre class="tool-call" id="stage-tool-call"><code></code></pre></div>
                 <dl class="meta" id="retriever-meta"></dl>
               </div>
             </div>
