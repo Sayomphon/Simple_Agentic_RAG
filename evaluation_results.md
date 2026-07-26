@@ -15,7 +15,41 @@ Negative queries (empty expectation) are excluded from precision/recall/MRR and 
 | V4_+gate_sibling | 92.6% | 92.6% | 95.8% | 93.8% | 0.948 | 100.0% | 94.7% | 0.958 | 0.0% | 0.0% | 8.3% |
 | V5_current_+stemming | 100.0% | 100.0% | 100.0% | 100.0% | 1.000 | 100.0% | 100.0% | 1.000 | 0.0% | 0.0% | 0.0% |
 
-Current variant `V5_current_+stemming` latency: p50 0.58 ms, p95 0.64 ms (single process, local file scan).
+Current variant `V5_current_+stemming` latency: p50 0.02 ms, p95 0.04 ms (single process, local file scan).
 
 `V5_current_+stemming` matches every expected title list on calibration exactly.
+
+## Dataset: heldout (n=14)
+
+| variant | exact | set | P_macro | R_macro | F1 | P_micro | R_micro | MRR | FP_neg | over | under |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| V0_raw_overlap | 21.4% | 21.4% | 43.1% | 90.9% | 0.584 | 23.2% | 92.9% | 0.818 | 100.0% | 63.6% | 9.1% |
+| V1_+query_filters | 28.6% | 28.6% | 54.7% | 90.9% | 0.683 | 35.1% | 92.9% | 0.864 | 100.0% | 54.5% | 9.1% |
+| V2_+aliases | 35.7% | 35.7% | 63.8% | 100.0% | 0.779 | 36.8% | 100.0% | 0.955 | 100.0% | 54.5% | 0.0% |
+| V3_+idf_title_weight | 35.7% | 35.7% | 63.8% | 100.0% | 0.779 | 36.8% | 100.0% | 0.955 | 100.0% | 54.5% | 0.0% |
+| V4_+gate_sibling | 50.0% | 50.0% | 60.6% | 63.6% | 0.621 | 90.0% | 64.3% | 0.636 | 66.7% | 9.1% | 36.4% |
+| V5_current_+stemming | 57.1% | 57.1% | 77.3% | 72.7% | 0.749 | 76.9% | 71.4% | 0.818 | 66.7% | 18.2% | 36.4% |
+
+Current variant `V5_current_+stemming` latency: p50 0.02 ms, p95 0.03 ms (single process, local file scan).
+
+### `V5_current_+stemming` mismatches on heldout
+
+- `ho_reply_speed_incident` — query: 'How fast do you reply to a production incident?'
+  - expected: ['--- Customer Support Service Levels ---']
+  - retrieved: []
+- `ho_trip_expense_claims` — query: 'How do I claim trip expenses?'
+  - expected: ['--- Expense Reimbursement ---', '--- International Travel Daily Allowance ---']
+  - retrieved: ['--- Expense Reimbursement ---', '--- International Travel Insurance ---']
+- `ho_card_rates` — query: 'card processing rates'
+  - expected: ['--- PaySiam Gateway Product Overview ---']
+  - retrieved: ['--- International Travel Approval Process ---', '--- Support Escalation Process ---']
+- `ho_wfh_and_anchor_days` — query: 'rules for working from home and anchor days'
+  - expected: ['--- Remote Work Policy ---', '--- Hybrid Work Guidelines ---']
+  - retrieved: ['--- Hybrid Work Guidelines ---']
+- `ho_parental_leave` — query: "What is the company's parental leave policy?"
+  - expected: []
+  - retrieved: ['--- Annual Leave ---']
+- `ho_vpn_password_reset` — query: 'How do I reset my TigerLink VPN password?'
+  - expected: []
+  - retrieved: ['--- Remote Work Policy ---']
 
