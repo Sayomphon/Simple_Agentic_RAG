@@ -19,7 +19,7 @@ if LIVE_TESTS_ENABLED:
 
 from src.agents.reporter import NOT_FOUND_SENTENCE
 from src.graph import build_graph
-from src.tools.retrieval import load_knowledge_base
+from src.tools.retrieval import load_knowledge_base, search
 
 
 @unittest.skipUnless(
@@ -88,6 +88,26 @@ class LiveLLMEndToEndTests(unittest.TestCase):
 
         self.assertEqual(result["snippets"], [])
         self.assertEqual(result["report"], NOT_FOUND_SENTENCE)
+
+    def test_multi_intent_query_covers_the_deterministic_baseline(self) -> None:
+        query = (
+            "Can I get reimbursed for flights and how do I escalate a P1?"
+        )
+        result = self._invoke(
+            {"query": query, "snippets": [], "report": ""}
+        )
+
+        # The union guarantee: whatever the model decomposed, the handoff
+        # must contain every chunk the plain single search returns.
+        baseline = search(query)
+        self.assertTrue(set(baseline) <= set(result["snippets"]))
+
+        corpus_chunks = set(load_knowledge_base())
+        for snippet in result["snippets"]:
+            self.assertIn(snippet, corpus_chunks)
+
+        self.assertTrue(str(result["report"]).strip())
+        self.assertNotEqual(result["report"], NOT_FOUND_SENTENCE)
 
     def test_streamed_cli_answer_is_byte_equal_with_the_state_report(self) -> None:
         import main as cli

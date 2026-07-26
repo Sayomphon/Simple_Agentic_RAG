@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 from langchain_core.messages import AIMessage
 
@@ -84,7 +84,7 @@ class AgentAndGraphTests(unittest.TestCase):
 
     @patch("src.agents.retriever.search_knowledge_base")
     @patch("src.agents.retriever.get_llm")
-    def test_retriever_raises_for_multiple_tool_calls(
+    def test_retriever_raises_for_too_many_tool_calls(
         self,
         mock_get_llm: Mock,
         mock_tool: Mock,
@@ -96,7 +96,28 @@ class AgentAndGraphTests(unittest.TestCase):
         }
         bound_llm = Mock()
         bound_llm.invoke.return_value = SimpleNamespace(
-            tool_calls=[tool_call, tool_call]
+            tool_calls=[tool_call] * 4
+        )
+        mock_get_llm.return_value.bind_tools.return_value = bound_llm
+
+        with self.assertRaises(RetrievalProtocolError):
+            retriever_node(self._state("annual leave"))
+
+        mock_tool.invoke.assert_not_called()
+
+    @patch("src.agents.retriever.search_knowledge_base")
+    @patch("src.agents.retriever.get_llm")
+    def test_retriever_raises_for_sub_query_without_text(
+        self,
+        mock_get_llm: Mock,
+        mock_tool: Mock,
+    ) -> None:
+        self._configure_tool(mock_tool)
+        bound_llm = Mock()
+        bound_llm.invoke.return_value = SimpleNamespace(
+            tool_calls=[
+                {"name": "search_knowledge_base", "args": {"query": "   "}}
+            ]
         )
         mock_get_llm.return_value.bind_tools.return_value = bound_llm
 
@@ -131,7 +152,48 @@ class AgentAndGraphTests(unittest.TestCase):
 
     @patch("src.agents.retriever.search_knowledge_base")
     @patch("src.agents.retriever.get_llm")
-    def test_retriever_rejects_altered_query_before_tool_execution(
+    def test_rewritten_sub_query_still_includes_the_baseline_results(
+        self,
+        mock_get_llm: Mock,
+        mock_tool: Mock,
+    ) -> None:
+        # Even a nonsense decomposition cannot lose baseline recall: the
+        # node always runs the original query itself, first.
+        self._configure_tool(mock_tool)
+        bound_llm = Mock()
+        bound_llm.invoke.return_value = SimpleNamespace(
+            tool_calls=[
+                {
+                    "name": "search_knowledge_base",
+                    "args": {"query": "unrelated rewritten query"},
+                }
+            ]
+        )
+        mock_get_llm.return_value.bind_tools.return_value = bound_llm
+        results_by_query = {
+            "exact original query": ["--- Baseline ---\nBaseline evidence."],
+            "unrelated rewritten query": [],
+        }
+        mock_tool.invoke.side_effect = (
+            lambda args: results_by_query[args["query"]]
+        )
+
+        result = retriever_node(self._state("exact original query"))
+
+        self.assertEqual(
+            result, {"snippets": ["--- Baseline ---\nBaseline evidence."]}
+        )
+        self.assertEqual(
+            mock_tool.invoke.call_args_list,
+            [
+                call({"query": "exact original query"}),
+                call({"query": "unrelated rewritten query"}),
+            ],
+        )
+
+    @patch("src.agents.retriever.search_knowledge_base")
+    @patch("src.agents.retriever.get_llm")
+    def test_multi_intent_calls_union_in_order_with_dedup(
         self,
         mock_get_llm: Mock,
         mock_tool: Mock,
@@ -142,16 +204,41 @@ class AgentAndGraphTests(unittest.TestCase):
             tool_calls=[
                 {
                     "name": "search_knowledge_base",
-                    "args": {"query": "rewritten query"},
-                }
+                    "args": {"query": "travel approval"},
+                },
+                {
+                    "name": "search_knowledge_base",
+                    "args": {"query": "annual leave"},
+                },
             ]
         )
         mock_get_llm.return_value.bind_tools.return_value = bound_llm
+        shared = "--- Travel Approval ---\nApproval evidence."
+        results_by_query = {
+            "travel approval and annual leave": [shared],
+            "travel approval": [shared],
+            "annual leave": ["--- Annual Leave ---\nLeave evidence."],
+        }
+        mock_tool.invoke.side_effect = (
+            lambda args: results_by_query[args["query"]]
+        )
 
-        with self.assertRaises(RetrievalProtocolError):
-            retriever_node(self._state("exact original query"))
+        result = retriever_node(self._state("travel approval and annual leave"))
 
-        mock_tool.invoke.assert_not_called()
+        # Baseline first, then each sub-query's new chunks, no duplicates.
+        self.assertEqual(
+            result,
+            {
+                "snippets": [
+                    shared,
+                    "--- Annual Leave ---\nLeave evidence.",
+                ]
+            },
+        )
+        baseline_results = results_by_query["travel approval and annual leave"]
+        self.assertTrue(
+            set(baseline_results) <= set(result["snippets"])
+        )
 
     @patch("src.agents.retriever.search_knowledge_base")
     @patch("src.agents.retriever.get_llm")

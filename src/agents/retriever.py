@@ -17,9 +17,11 @@ if TYPE_CHECKING:
 RETRIEVER_SYSTEM_PROMPT = """\
 You are the Data Retriever Agent in a sequential RAG pipeline.
 
-Your only task is to retrieve evidence:
-- Call `search_knowledge_base` exactly once.
-- Pass the user's original query unchanged as the tool `query`.
+Your only task is to gather evidence with the `search_knowledge_base` tool:
+- If the question asks about a single topic, make exactly one tool call
+  and pass the user's original query unchanged as the tool `query`.
+- If it combines several distinct topics, split it into at most three
+  focused sub-queries and make one tool call per sub-query.
 - Never answer the question yourself.
 - Never summarize, rewrite, filter, or add to the tool output.
 - The raw snippets returned by the tool will be passed to another agent.
@@ -28,6 +30,9 @@ Your only task is to retrieve evidence:
 # Bounds the retriever prompt cost; ~2,000 characters is several paragraphs,
 # far beyond any legitimate question over a 10-section knowledge base.
 MAX_QUERY_CHARS = 2000
+
+# Caps evidence volume and provider cost for multi-intent questions.
+MAX_TOOL_CALLS = 3
 
 
 class InvalidQueryError(ValueError):
@@ -50,8 +55,48 @@ def _validate_query(query: object) -> str:
     return query
 
 
+def _validated_sub_queries(response: object) -> list[str]:
+    """Extract sub-queries from the model response, enforcing the contract."""
+    tool_calls = getattr(response, "tool_calls", None) or []
+    if not 1 <= len(tool_calls) <= MAX_TOOL_CALLS:
+        raise RetrievalProtocolError(
+            "Data Retriever must request between 1 and "
+            f"{MAX_TOOL_CALLS} retrieval tool calls"
+        )
+
+    sub_queries: list[str] = []
+    for tool_call in tool_calls:
+        if not isinstance(tool_call, Mapping):
+            raise RetrievalProtocolError(
+                "Data Retriever returned a malformed retrieval tool call"
+            )
+        if tool_call.get("name") != search_knowledge_base.name:
+            raise RetrievalProtocolError(
+                "Data Retriever requested an unexpected retrieval tool"
+            )
+        tool_args = tool_call.get("args") or {}
+        if not isinstance(tool_args, Mapping):
+            raise RetrievalProtocolError(
+                "Data Retriever returned malformed retrieval arguments"
+            )
+        sub_query = tool_args.get("query")
+        if not isinstance(sub_query, str) or not sub_query.strip():
+            raise RetrievalProtocolError(
+                "Data Retriever requested a tool call without a query"
+            )
+        sub_queries.append(sub_query)
+    return sub_queries
+
+
 def retriever_node(state: PipelineState) -> dict[str, list[str]]:
-    """Execute the model-requested custom tool call and hand off its output."""
+    """Execute the model-requested tool calls and hand off their union.
+
+    The node always runs the original query itself first (deterministic
+    baseline), then appends each sub-query's new results in call order,
+    deduplicated by exact chunk text. The handoff is therefore always a
+    superset of ``search(original_query)`` — recall can never fall below
+    the single-call baseline no matter how the model decomposes.
+    """
     query = _validate_query(state["query"])
     llm_with_tool = get_llm(RETRIEVER_MODEL_NAME).bind_tools(
         [search_knowledge_base],
@@ -63,32 +108,15 @@ def retriever_node(state: PipelineState) -> dict[str, list[str]]:
             HumanMessage(content=query),
         ]
     )
+    sub_queries = _validated_sub_queries(response)
 
-    tool_calls = getattr(response, "tool_calls", None) or []
-    if len(tool_calls) != 1:
-        raise RetrievalProtocolError(
-            "Data Retriever must request exactly one retrieval tool call"
-        )
-
-    tool_call = tool_calls[0]
-    if not isinstance(tool_call, Mapping):
-        raise RetrievalProtocolError(
-            "Data Retriever returned a malformed retrieval tool call"
-        )
-
-    if tool_call.get("name") != search_knowledge_base.name:
-        raise RetrievalProtocolError(
-            "Data Retriever requested an unexpected retrieval tool"
-        )
-
-    tool_args = tool_call.get("args") or {}
-    if not isinstance(tool_args, Mapping):
-        raise RetrievalProtocolError(
-            "Data Retriever returned malformed retrieval arguments"
-        )
-
-    if tool_args.get("query") != query:
-        raise RetrievalProtocolError("Data Retriever changed the original query")
-
-    snippets = search_knowledge_base.invoke({"query": query})
-    return {"snippets": list(snippets)}
+    snippets = list(search_knowledge_base.invoke({"query": query}))
+    seen = set(snippets)
+    for sub_query in sub_queries:
+        if sub_query == query:
+            continue  # Already covered by the baseline search.
+        for chunk in search_knowledge_base.invoke({"query": sub_query}):
+            if chunk not in seen:
+                seen.add(chunk)
+                snippets.append(chunk)
+    return {"snippets": snippets}
