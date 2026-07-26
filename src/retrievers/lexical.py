@@ -72,11 +72,13 @@ BODY_MATCH_WEIGHT = 1.0
 MIN_RELATIVE_SCORE = 0.60
 MIN_ABSOLUTE_SCORE = 1.0
 # TF saturation is off by default: the ablation study measured no metric
-# gain over stemming alone, and the calibration sweep showed any K_TF
-# above 0.05 lets title-only matches outrank multi-term body evidence in
-# these short sections. See docs/DESIGN_NOTES.md ("Term frequency:
-# measured, then dropped"). The scoring path stays available to evals
-# via RetrievalSettings(use_tf_saturation=True).
+# gain over stemming alone anywhere inside the safe band. The calibration
+# sweep showed exact match holds at 100% up to K_TF=0.08 and drops at
+# 0.09, where title-only matches start outranking multi-term body evidence
+# in these short sections; 0.05 keeps margin inside that band. See
+# docs/DESIGN_NOTES.md ("Term frequency: measured, then dropped"). The
+# scoring path stays available to evals via
+# RetrievalSettings(use_tf_saturation=True).
 K_TF = 0.05
 
 # These terms express sentence structure rather than the subject to retrieve.

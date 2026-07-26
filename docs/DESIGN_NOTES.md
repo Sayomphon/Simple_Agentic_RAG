@@ -5,7 +5,7 @@ failure modes that shaped its boundaries, why retrieval is deterministic, and
 what the current tests actually verify. Results here are reproducible with:
 
 ```bash
-./.venv-clean/bin/python -m unittest discover -v
+python -m unittest discover -v
 ```
 
 ## Design goal and system boundary
@@ -36,9 +36,15 @@ The handoff is a typed, intentionally minimal contract:
 ```python
 class PipelineState(TypedDict):
     query: str
-    snippets: list[str]
+    snippets: list[str]   # the only evidence the Generator prompt receives
     report: str
+    retrieval_telemetry: NotRequired[list[SearchTelemetry]]
 ```
+
+The first three fields are required and carry the agent handoff.
+`retrieval_telemetry` is an optional, display-only field for the CLI and web
+UI; it never enters the Generator prompt (see
+[Retrieval telemetry boundary](#retrieval-telemetry-boundary)).
 
 This separation makes retrieval observable and independently testable. It also
 prevents the Retriever from answering the user or silently summarizing source
@@ -52,9 +58,12 @@ knowledge-base miss:
 | Boundary condition | Earlier risk | Current behavior |
 |---|---|---|
 | Retriever returns no tool call | Empty evidence | `RetrievalProtocolError` |
-| Retriever changes the query | Search executes altered intent | Reject before tool execution |
+| Retriever requests a wrong tool, too many calls, or an empty sub-query | Untrusted arguments reach the tool | `RetrievalProtocolError` |
+| Retriever substitutes its own query | Search executes altered intent only | The original query always runs first as the baseline, so sub-queries can only add evidence |
+| Query is empty, whitespace-only, or over-length | Wasted provider call | `InvalidQueryError` before any LLM call |
 | Knowledge base is empty or malformed | No matching sections | `KnowledgeBaseFormatError` |
 | Generator returns non-text or empty output | Invalid text reaches the CLI | `ReportGenerationError` |
+| Generator cites a section that was never retrieved | A fabricated source ships | `ReportGenerationError` |
 | One graph invocation fails | Interactive process ends | Safe error; next query is accepted |
 
 The key rule is that `snippets == []` has one meaning only: the corpus loaded
@@ -172,12 +181,14 @@ Two findings led to dropping it from the default configuration:
 
 1. A `K_TF x MIN_RELATIVE_SCORE` sweep against the calibration set showed
    the constraint is binding at `K_TF <= 0.08` with the shipped `0.60`
-   relative cutoff: these sections are so short (term frequencies are
-   almost always 1) that any stronger TF signal shrinks body scores until
-   broad title-only matches outrank multi-term body evidence
+   relative cutoff: calibration exact match holds at 100% up to `0.08` and
+   falls to 96.3% at `0.09`. These sections are so short (term frequencies
+   are almost always 1) that any stronger TF signal shrinks body scores
+   until broad title-only matches outrank multi-term body evidence
    (`international card` starts admitting the travel sections).
-2. At the largest safe constant, V6 equals V5 on every metric — the layer
-   buys nothing measurable.
+2. Anywhere inside that safe band, V6 equals V5 on every metric — verified
+   at both `K_TF=0.05` and the boundary value `0.08`, on the calibration
+   set and the held-out set. The layer buys nothing measurable.
 
 Per the decision rule set before implementation (keep TF only if the
 ablation shows it beats stemming alone on at least one metric), the
@@ -283,9 +294,9 @@ output by default.
 
 ## Verified outcomes
 
-Using Python 3.11.15 in the repository's clean virtual environment:
+Using Python 3.11.15, `python -m unittest discover` finds 166 tests:
 
-- all 149 offline unit tests pass (5 live tests skipped by default);
+- all 161 offline unit tests pass (the 5 live tests are skipped by default);
 - the knowledge base loads as exactly 10 ordered sections;
 - retrieval results are deterministic for repeated queries, and the parse
   cache invalidates on file change in default lexical mode;
@@ -303,6 +314,10 @@ Using Python 3.11.15 in the repository's clean virtual environment:
 - the Retriever rejects missing, excess, unexpected, and empty tool calls,
   and its handoff is a superset of the deterministic baseline search;
 - invalid queries are rejected before any LLM call;
+- configuration parsing treats blank values as unset, names the offending
+  variable on malformed numeric input, and rejects out-of-range search
+  modes, timeouts, retry budgets, cosine gates, and `RRF_K` values at
+  import time;
 - invented citations raise instead of shipping a fabricated source;
 - raw snippet lists cross the LangGraph handoff unchanged;
 - the graph contains exactly the two intended agent nodes;
@@ -361,8 +376,8 @@ evaluation, and an output policy appropriate to the business domain.
 
 ## Retrieval telemetry boundary
 
-Phase 3 adds immutable `SearchTelemetry` and `SnippetTrace` values beside the
-raw-snippet handoff. The agent-facing tool still returns only `list[str]`; it
+Per-snippet observability adds immutable `SearchTelemetry` and `SnippetTrace`
+values beside the raw-snippet handoff. The agent-facing tool still returns only `list[str]`; it
 stores one allowlisted trace in thread-local storage, and the Retriever consumes
 and clears that value immediately after each invocation. Thread-local storage
 is intentional here: LangChain invokes tools inside a copied context, so a
