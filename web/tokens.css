@@ -281,6 +281,7 @@
      ======================================================================= */
 
   --size-content-max: 880px;  /* page column */
+  --size-prose-max:   72ch;   /* readable answer prose measure; metadata stays full width */
   --size-rail-col:    24px;   /* timeline rail gutter (narrow on mobile) */
   --size-marker:      22px;   /* rail node diameter */
   --size-rail-line:   3px;    /* connector thickness — must beat the 1px card

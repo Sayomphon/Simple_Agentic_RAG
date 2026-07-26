@@ -79,6 +79,7 @@
   var el = {
     form: document.getElementById("query-form"),
     input: document.getElementById("query-input"),
+    queryError: document.getElementById("query-error"),
     runButton: document.getElementById("run-button"),
     runTimer: document.getElementById("run-timer"),
     chips: document.getElementById("sample-chips"),
@@ -94,6 +95,7 @@
     errorRequestId: document.getElementById("error-request-id"),
     errorRaw: document.getElementById("error-raw"),
     retryButton: document.getElementById("retry-button"),
+    switchMockButton: document.getElementById("switch-mock-button"),
     retryStatus: document.getElementById("retry-status"),
     pipeline: document.getElementById("pipeline"),
     stageQuery: document.getElementById("stage-query"),
@@ -546,7 +548,6 @@
             : retrieval && retrieval.scores && retrieval.scores.length > index
             ? formatScore(retrieval.scores[index])
             : null;
-        var scoreDetail = trace && trace.detail ? trace.detail : "Retrieval score";
         return (
           '<figure class="snippet" id="snippet-' +
           index +
@@ -561,11 +562,7 @@
           escapeHtml(title) +
           "</span>" +
           (score !== null
-            ? '<span class="snippet-score" title="' +
-              escapeHtml(scoreDetail) +
-              '">score ' +
-              score +
-              "</span>"
+            ? '<span class="snippet-score">score ' + score + "</span>"
             : "") +
           (trace
             ? '<span class="snippet-method" data-method="' +
@@ -750,6 +747,7 @@
     setBusy(true);
     el.emptyState.hidden = true;
     el.errorState.hidden = true;
+    el.switchMockButton.hidden = true;
     el.pipeline.hidden = false;
     el.copyAnswer.hidden = true;
 
@@ -862,14 +860,16 @@
   function showError(error) {
     var message =
       (error && error.message) || "The workflow could not be completed. Please try again.";
+    var errorCode = classifyError(error);
 
     updateHeadline();
-    el.errorCode.textContent = classifyError(error);
+    el.errorCode.textContent = errorCode;
     el.errorMessage.textContent = message;
     el.errorRequestId.textContent = state.traceId;
     el.errorRaw.textContent = (error && (error.stack || error.message)) || String(error);
     el.errorDetails.open = false;
     el.errorState.hidden = false;
+    el.switchMockButton.hidden = !(errorCode === "NETWORK" && api.getMode() === "live");
 
     var failing = null;
     STAGE_ORDER.forEach(function (stage) {
@@ -948,6 +948,7 @@
   function renderSourceToggle() {
     var mode = api.getMode();
     el.sourceToggle.setAttribute("data-mode", mode);
+    el.sourceToggle.setAttribute("aria-checked", String(mode === "live"));
     el.sourceLabel.textContent = mode === "live" ? "Live backend" : "Mock data";
     el.sourceToggle.title =
       mode === "live"
@@ -956,18 +957,26 @@
   }
 
   function copyToClipboard(text, button) {
-    var done = function () {
+    var flash = function (label, message) {
       var original = button.textContent;
-      button.textContent = "Copied";
+      button.textContent = label;
+      if (message) announce(message);
       global.setTimeout(function () {
         button.textContent = original;
       }, COPY_FEEDBACK_MS);
     };
 
     if (global.navigator.clipboard && global.navigator.clipboard.writeText) {
-      global.navigator.clipboard.writeText(text).then(done, function () {
-        /* Clipboard blocked (e.g. insecure origin) — leave the label untouched. */
-      });
+      global.navigator.clipboard.writeText(text).then(
+        function () {
+          flash("Copied");
+        },
+        function () {
+          flash("Copy failed", "Copying is blocked in this context.");
+        }
+      );
+    } else {
+      flash("Copy failed", "Clipboard is not available in this context.");
     }
   }
 
@@ -979,18 +988,25 @@
     }
     var query = el.input.value.trim();
     if (!query) {
+      el.queryError.hidden = false;
       el.input.focus();
       announce("Enter a question before running the workflow.");
       return;
     }
+    el.queryError.hidden = true;
     state.retryCount = 0;
     run(query);
+  });
+
+  el.input.addEventListener("input", function () {
+    el.queryError.hidden = true;
   });
 
   el.chips.addEventListener("click", function (event) {
     var chip = event.target.closest(".chip");
     if (!chip || chip.disabled) return;
     el.input.value = chip.textContent;
+    el.queryError.hidden = true;
     state.retryCount = 0;
     run(chip.textContent);
   });
@@ -999,6 +1015,16 @@
     if (el.retryButton.disabled || !state.query) return;
     state.retryCount += 1;
     run(state.query);
+  });
+
+  el.switchMockButton.addEventListener("click", function () {
+    api.setMode("mock");
+    renderSourceToggle();
+    announce("Data source set to mock data. Re-running the workflow.");
+    if (state.query) {
+      state.retryCount = 0;
+      run(state.query);
+    }
   });
 
   el.evidenceList.addEventListener("click", function (event) {

@@ -195,6 +195,11 @@ pre {
   color: var(--color-text-primary);
 }
 
+.source-pill-prefix {
+  color: var(--color-text-tertiary);
+  font-size: var(--type-caption-size);
+}
+
 .source-dot {
   width: var(--space-2);
   height: var(--space-2);
@@ -221,6 +226,13 @@ pre {
   font-weight: var(--type-caption-weight);
   letter-spacing: var(--type-caption-tracking);
   color: var(--color-text-secondary);
+}
+
+.field-error {
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  font-weight: var(--type-caption-weight);
+  color: var(--color-warning-fg);
 }
 
 .query-row {
@@ -719,6 +731,11 @@ pre {
   justify-content: space-between;
   gap: var(--space-3);
   cursor: pointer;
+}
+
+.step-h {
+  display: contents;
+  font: inherit;
 }
 
 .step-toggle {
@@ -1284,6 +1301,11 @@ pre {
   gap: var(--space-3);
 }
 
+.answer-body p,
+.answer-body ul {
+  max-width: var(--size-prose-max);
+}
+
 .answer-body ul {
   margin: 0;
   padding-left: var(--space-5);
@@ -1359,6 +1381,32 @@ pre {
 
 .app-footer code {
   font-size: var(--type-caption-size);
+}
+
+/* Expand mobile hit areas without changing the visual footprint. */
+@media (max-width: 767.98px) {
+  .btn-icon,
+  .chip,
+  .source-pill,
+  .clamp-toggle {
+    position: relative;
+  }
+
+  .btn-icon::after,
+  .source-pill::after,
+  .clamp-toggle::after {
+    content: "";
+    position: absolute;
+    inset: calc(-1 * var(--space-2)) calc(-1 * var(--space-1));
+  }
+
+  /* Wrapped chip rows have an 8px gap, so stop each hit area at the midpoint
+     instead of letting adjacent query targets overlap. */
+  .chip::after {
+    content: "";
+    position: absolute;
+    inset: calc(-1 * var(--space-1));
+  }
 }
 
 /* ── Responsive: ≥768px (rail/marker sizes switch inside tokens.css) ────── */
