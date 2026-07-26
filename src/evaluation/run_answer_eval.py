@@ -76,6 +76,10 @@ def main() -> int:
     if os.getenv("RUN_LIVE_LLM_TESTS") != "1":
         print("Skipped: set RUN_LIVE_LLM_TESTS=1 to run the live answer eval.")
         return 0
+
+    from dotenv import load_dotenv
+
+    load_dotenv()
     if not os.getenv("OPENAI_API_KEY"):
         print("ERROR: OPENAI_API_KEY is required for the live answer eval.",
               file=sys.stderr)
