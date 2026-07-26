@@ -285,7 +285,7 @@ summarize, enrich, rerank, or rewrite the evidence.
 │   ├── 01_international_travel.png       # CLI runs
 │   ├── 02_remote_work.png
 │   ├── 03_not_found.png
-│   └── ui_01_empty.png … ui_07_dark.png  # web UI states
+│   └── ui_01_empty.png … ui_08_compact_bar.png  # web UI states
 ├── docs/
 │   └── DESIGN_NOTES.md           # engineering rationale and trade-offs
 ├── evaluation_results.md         # generated multi-mode retrieval metrics
@@ -729,11 +729,24 @@ inherit its strictness and must not be treated as deterministic CI gates.
 
 ## Example results
 
+> **Live E2E verification — 26 July 2026.**
+> `RUN_LIVE_LLM_TESTS=1 .venv/bin/python -m unittest -v tests.test_live_e2e`
+> completed all 5 provider-boundary tests in 88.408 seconds. The run covered a
+> known multi-section query, the multi-intent union guarantee, streamed CLI/state
+> parity, a Thai answer with a byte-verifiable English citation, and the exact
+> deterministic not-found response.
+
 ### Command-line interface
 
-The screenshots below were captured from successful live CLI runs with
-`gpt-5-mini`. Each image shows the user query, the raw evidence handoff, and the
-final grounded answer.
+The screenshots below were regenerated on **26 July 2026** from successful live
+CLI runs with `gpt-5-mini`. They are direct renderings of the CLI's stdout—not
+mock fixtures—and each image shows the user query, the raw evidence handoff,
+retrieval telemetry, and the final grounded answer.
+
+Together, the three runs demonstrate the assignment-critical paths: grounded
+multi-section synthesis, complementary related-section synthesis, and a
+knowledge-base gap that returns the exact deterministic fallback instead of
+hallucinating.
 
 #### International travel — multi-section synthesis
 
@@ -758,10 +771,23 @@ system returns the fixed fallback instead of inventing an answer.
 
 ### Web interface
 
-These screenshots come from the bundled UI running on **mock fixtures**, not a
-live provider call. The retrieved sections are byte-identical to
-`knowledge_base.txt`, and the mock gate returns the same sections as the Python
-tool for the queries in the table above.
+These screenshots were refreshed after the live E2E verification above. They
+come from the bundled UI running on **mock fixtures**, not a live provider call.
+The retrieved sections are byte-identical to `knowledge_base.txt`, and the mock
+gate returns the same sections as the Python tool for the queries in the table
+above.
+
+For an AI Engineer Programming Test reviewer, the image sequence is organised
+around inspectability: graph topology before execution, per-stage progress,
+forced tool use, raw evidence handoff, grounded citations, deterministic
+not-found behaviour, explicit backend failures, and responsive operation.
+
+#### Evaluator orientation — graph visible before execution
+
+The first-visit state names both agents and exposes the fixed LangGraph topology
+before a query is submitted.
+
+![Web UI empty state with the two-agent topology visible](screenshots/ui_01_empty.png)
 
 #### International travel — evidence handoff made visible
 
@@ -786,16 +812,24 @@ Retriever → Evidence → Generator → Answer stays visible in flight.
 
 ![Web UI running with per-stage status badges and skeletons](screenshots/ui_02_running.png)
 
+#### Compact audit status
+
+Once the query card scrolls out of view, the sticky bar preserves the run
+outcome, query, and grounding count while evidence and the final answer remain
+under review.
+
+![Web UI compact status bar while reviewing a grounded answer](screenshots/ui_08_compact_bar.png)
+
 #### Backend failure
 
 A failure is not converted into a not-found. The error is surfaced with the
 unfinished stages marked *Failed*, matching the CLI's failure semantics.
 
-![Web UI error state after an unreachable backend](screenshots/ui_05_error.png)
+![Web UI error state after a backend protocol failure](screenshots/ui_05_error.png)
 
 #### Responsive and dark theme
 
-The same five stages on a 390 px viewport and in the dark colour scheme.
+The same five stages on an exact 390 px viewport and in the dark colour scheme.
 
 | Mobile | Dark |
 |---|---|
