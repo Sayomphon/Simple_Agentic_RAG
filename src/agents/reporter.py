@@ -43,13 +43,18 @@ Rules:
 - Combine complementary facts and state duplicate facts only once.
 - Each snippet starts with `--- Section Title ---`. When useful, cite that
   exact title as `[Section Title]`; never invent a source name.
-- If the snippets do not contain the information needed to answer the
-  query, reply with exactly this sentence and nothing else — no
-  citation: "{NOT_FOUND_SENTENCE}"
+- If the snippets do not contain the information needed to answer any
+  part of the query, reply with exactly this sentence and nothing else —
+  no citation: "{NOT_FOUND_SENTENCE}"
+- If the query asks several things and the snippets answer only some of
+  them, answer the supported parts normally and state plainly which part
+  the knowledge base does not cover. Use the exact not-found sentence
+  alone only when no part of the query is answerable.
 - Snippets that merely relate to the query's topic do not count as an
   answer. If the user asks for specific data or a specific fact and the
   snippets only describe rules or processes about that topic without
-  stating the requested information itself, use the not-found sentence.
+  stating the requested information itself, treat that part as not
+  covered.
 - Keep the answer concise, cohesive, non-redundant, and easy to scan.
 """
 
