@@ -9,6 +9,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 from src.evaluation.ablation import build_variants
+from src.evaluation.calibrate_threshold import (
+    CalibrationPair,
+    build_report,
+    choose_threshold,
+    measure_pairs,
+)
 from src.evaluation.dataset import (
     DatasetValidationError,
     EvalCase,
@@ -22,6 +28,7 @@ from src.evaluation.metrics import (
     query_recall,
     reciprocal_rank,
 )
+from src.retrievers.base import ScoredChunk
 from src.tools.retrieval import DEFAULT_SETTINGS, search
 
 
@@ -40,6 +47,15 @@ class DatasetLoaderTests(unittest.TestCase):
         self.assertGreaterEqual(len(negatives), 3)
         self.assertTrue(
             all(case.expected_titles == () for case in negatives)
+        )
+
+    def test_hard_negative_calibration_set_contains_only_near_misses(self) -> None:
+        cases = load_cases("negatives")
+
+        self.assertGreaterEqual(len(cases), 10)
+        self.assertTrue(all(case.is_negative for case in cases))
+        self.assertTrue(
+            all(case.category != "heldout" for case in cases)
         )
 
     def test_unknown_dataset_name_is_rejected(self) -> None:
@@ -236,6 +252,107 @@ class AblationTests(unittest.TestCase):
                     search(case.query),
                     search(case.query, settings=DEFAULT_SETTINGS),
                 )
+
+
+class ThresholdCalibrationTests(unittest.TestCase):
+    @staticmethod
+    def _pair(case_id: str, score: float) -> CalibrationPair:
+        return CalibrationPair(
+            case_id=case_id,
+            query=f"query {case_id}",
+            title=f"--- {case_id} ---",
+            score=score,
+        )
+
+    def test_clean_gap_uses_midpoint(self) -> None:
+        decision = choose_threshold(
+            [self._pair("positive", 0.80)],
+            [self._pair("negative", 0.50)],
+        )
+
+        self.assertEqual(decision.strategy, "clean-gap midpoint")
+        self.assertEqual(decision.recommended, 0.65)
+        self.assertFalse(decision.lost_positive_pairs)
+        self.assertFalse(decision.leaked_negative_pairs)
+
+    def test_overlap_uses_precision_first_boundary(self) -> None:
+        weak = self._pair("weak", 0.60)
+        strong_negative = self._pair("near_miss", 0.72)
+
+        decision = choose_threshold([weak], [strong_negative])
+
+        self.assertEqual(
+            decision.strategy,
+            "precision-weighted F0.5 sweep (overlap)",
+        )
+        self.assertEqual(decision.recommended, 0.60)
+        self.assertFalse(decision.lost_positive_pairs)
+        self.assertEqual(
+            decision.leaked_negative_pairs,
+            (strong_negative,),
+        )
+        self.assertEqual(decision.zero_fp_threshold, 0.720001)
+
+    def test_pair_measurement_uses_expected_and_negative_top_one(self) -> None:
+        positive = EvalCase(
+            id="positive",
+            category="test",
+            query="positive query",
+            expected_titles=("--- Alpha ---",),
+            forbidden_titles=(),
+        )
+        negative = EvalCase(
+            id="negative",
+            category="test",
+            query="negative query",
+            expected_titles=(),
+            forbidden_titles=("--- Beta ---",),
+        )
+        results = {
+            "positive query": [
+                ScoredChunk(0, "--- Alpha ---\nA", 0.81, "semantic"),
+                ScoredChunk(1, "--- Beta ---\nB", 0.20, "semantic"),
+            ],
+            "negative query": [
+                ScoredChunk(1, "--- Beta ---\nB", 0.70, "semantic"),
+                ScoredChunk(0, "--- Alpha ---\nA", 0.40, "semantic"),
+            ],
+        }
+
+        class FakeScorer:
+            embedding_api_calls = 0
+
+            def score_all(self, query: str) -> list[ScoredChunk]:
+                return results[query]
+
+        positives, negatives = measure_pairs(
+            FakeScorer(),
+            [positive],
+            [negative],
+        )
+
+        self.assertEqual(positives[0].score, 0.81)
+        self.assertEqual(positives[0].title, "--- Alpha ---")
+        self.assertEqual(negatives[0].score, 0.70)
+        self.assertEqual(negatives[0].title, "--- Beta ---")
+
+    def test_report_discloses_calibration_role_and_lost_pairs(self) -> None:
+        positive = self._pair("weak", 0.60)
+        negative = self._pair("near_miss", 0.72)
+        decision = choose_threshold([positive], [negative])
+
+        report = build_report(
+            [positive],
+            [negative],
+            decision,
+            embedding_api_calls=3,
+        )
+
+        self.assertIn("intentional calibration set, not held-out", report)
+        self.assertIn("Held-out source was not loaded", report)
+        self.assertIn("Positive pairs lost", report)
+        self.assertIn("zero-FP boundary", report)
+        self.assertIn("F0.5", report)
 
 
 if __name__ == "__main__":

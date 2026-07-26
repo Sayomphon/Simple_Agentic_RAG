@@ -63,11 +63,11 @@ rules. Protocol, corpus, provider, and model-output failures remain exceptions.
 This prevents an operational incident from being presented to the user as
 “the knowledge base has no answer.”
 
-## Deterministic retrieval
+## Default deterministic lexical retrieval
 
 The current corpus contains 10 small, machine-delimited sections, so a local
 lexical scan is easier to inspect and reproduce than an embedding service or
-vector database. `src/tools/retrieval.py` performs the following steps:
+vector database. `src/retrievers/lexical.py` performs the following steps:
 
 1. read `knowledge_base.txt` as UTF-8, with parsing cached per file
    identity (path, `mtime_ns`, size);
@@ -113,6 +113,49 @@ The tool returns the original section text, including its title. It does not
 use an LLM to rank, rewrite, summarize, or enrich evidence, and it has no fixed
 `TOP_K`. At this corpus size, returning every section that passes the rule
 preserves cross-section answers better than an arbitrary cap.
+
+## Semantic and hybrid measured path
+
+The agent-facing `search_knowledge_base(query: str) -> list[str]` contract is
+unchanged. Internally, `Retriever.search()` returns scored raw chunks and a
+configuration-owned factory selects `lexical`, `semantic`, or `hybrid`.
+The LLM never selects a mode, and the graph, agent nodes, and raw-snippet
+handoff are identical in all three cases.
+
+Semantic mode is deliberately basic: `text-embedding-3-small`, an in-memory
+linear cosine scan over 10 sections, and one global threshold. Document
+vectors are batched and cached by a hash of embedding model plus raw chunk
+content. The cache stores validated JSON rather than executable
+serialization, writes atomically with restrictive file permissions, rejects
+symlinked cache paths, and rebuilds malformed content. Missing credentials
+or provider failures raise; they are never presented as an empty search and
+never trigger a silent lexical fallback.
+
+The hard-negative calibration set contains 12 intentional near-misses. It is
+a tuning set, not held-out evidence. The measured distributions overlap:
+
+| calibration measure | value |
+|---|---:|
+| minimum expected-pair cosine | 0.223143 |
+| maximum hard-negative top cosine | 0.757588 |
+| clean gap | -0.534445 |
+| selected `MIN_COSINE` | 0.392817 |
+| pair precision / recall / F0.5 | 0.875 / 0.921 / 0.884 |
+| hard-negative leaks | 5/12 |
+
+A threshold above the strongest negative would lose all 38 expected pairs.
+The deployed value therefore maximizes pair-level F0.5 across six-decimal
+configuration boundaries, weighting precision twice as strongly as recall.
+Every score, lost positive, leaked negative, and the zero-FP counterfactual
+is recorded in `threshold_calibration.md`.
+
+Hybrid mode gates lexical and semantic results independently, then applies
+Reciprocal Rank Fusion with `k=60`. Rank-only fusion avoids treating lexical
+weights and cosine as comparable magnitudes. Exact-text deduplication
+preserves the raw source contract. On held-out queries, hybrid recall rises
+to 100%, but its false-positive rate stays at 66.7% because RRF can reorder
+admitted evidence; it cannot remove lexical false positives. This is a
+recall-oriented mode, not a universal quality improvement.
 
 ## Term frequency: measured, then dropped
 
@@ -241,10 +284,15 @@ output by default.
 
 Using Python 3.11.15 in the repository's clean virtual environment:
 
-- all 99 offline unit tests pass (4 live tests skipped by default);
+- all 122 offline unit tests pass (4 live tests skipped by default);
 - the knowledge base loads as exactly 10 ordered sections;
 - retrieval results are deterministic for repeated queries, and the parse
-  cache invalidates on file change;
+  cache invalidates on file change in default lexical mode;
+- semantic document caches reuse valid vectors, invalidate on knowledge-base
+  changes, rebuild corruption safely, and map results to raw source chunks;
+- hybrid gate-first RRF preserves one-sided results and removes duplicates;
+- assignment invariants enforce two nodes, fixed sequential edges, raw
+  `list[str]` tool output, a tool-free Reporter, and offline lexical default;
 - generic-only, stopword-only, unknown, empty, and malformed-corpus cases are
   distinguished;
 - stemming is idempotent over every corpus and fixture token and never
@@ -274,7 +322,11 @@ SLO or cost per query over real user traffic.
 
 Credentials are read from environment variables and `.env` is ignored by Git.
 Application errors avoid echoing raw queries or provider exceptions. The
-current implementation still lacks production controls such as authentication,
+embedding cache contains numeric document vectors only, uses JSON rather than
+pickle, validates shape and finite values, and is ignored by Git. Semantic and
+hybrid modes send knowledge-base sections and user queries to OpenAI; enterprise
+use therefore requires explicit data-egress approval and data classification.
+The current implementation still lacks production controls such as authentication,
 document-level authorization, encryption policy, prompt-injection filtering,
 PII classification, rate limiting, audit retention, and redacted telemetry.
 
@@ -286,10 +338,12 @@ evaluation, and an output policy appropriate to the business domain.
 ## Scaling and production path
 
 For 10 sections, reparsing and scanning the text file per request is a
-reasonable transparency-first choice. Approximate search cost is
+reasonable transparency-first choice. Lexical search cost is approximately
 `O(B + n log n)`, where `B` is corpus size and `n` is the number of matching
-candidates. There is no index lifecycle, cache invalidation, or external
-storage dependency to operate.
+candidates. Semantic mode performs `O(Sd)` cosine work for `S` sections and
+embedding dimension `d`; document vectors are cached, while every query still
+incurs one provider request. No ANN or external vector store is justified at
+this scale.
 
 A redesign becomes justified when measured requirements show one or more of
 the following:
@@ -297,17 +351,16 @@ the following:
 - full-scan latency exceeds the retrieval budget;
 - corpus size risks overflowing the Generator context because there is no
   `TOP_K`;
-- real Thai queries, synonyms, spelling variation, or unseen vocabulary cause
-  unacceptable recall;
+- real Thai queries, spelling variation, or unseen vocabulary cause
+  unacceptable measured recall;
 - documents require metadata filtering or per-user authorization;
 - concurrent traffic reaches model-provider rate limits; or
 - production evaluation shows that lexical ranking no longer meets quality
   targets.
 
-The next step would be an offline ingestion pipeline with stable document and
-chunk IDs, metadata and ACLs, Thai-capable embeddings, and a hybrid
-lexical/vector retriever behind the existing snippet handoff. Add bounded
-candidate retrieval, reranking, citations, redacted tracing, and a
-version-controlled evaluation set built from anonymized real questions.
-Adopt the added infrastructure only when it improves measured answer quality
-within agreed latency, cost, privacy, and operational constraints.
+The next measured step is a Thai/cross-lingual slice against the current
+semantic path. A larger corpus would justify an offline ingestion pipeline
+with stable chunk IDs, metadata and ACLs, bounded candidate retrieval, and
+possibly an ANN store behind the same snippet handoff. Adopt added
+infrastructure only when it improves measured answer quality within agreed
+latency, cost, privacy, and operational constraints.

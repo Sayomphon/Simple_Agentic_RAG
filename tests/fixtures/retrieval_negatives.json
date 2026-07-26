@@ -1,0 +1,109 @@
+[
+  {
+    "id": "neg_maternity_leave_duration",
+    "category": "absent_leave_type",
+    "query": "How many days of maternity leave do employees receive?",
+    "expected_titles": [],
+    "forbidden_titles": [
+      "--- Annual Leave ---"
+    ]
+  },
+  {
+    "id": "neg_sick_leave_carryover",
+    "category": "absent_leave_type",
+    "query": "Can unused sick leave be carried into next year?",
+    "expected_titles": [],
+    "forbidden_titles": [
+      "--- Annual Leave ---"
+    ]
+  },
+  {
+    "id": "neg_domestic_travel_allowance",
+    "category": "scope_mismatch",
+    "query": "What is the domestic travel daily allowance in Thailand?",
+    "expected_titles": [],
+    "forbidden_titles": [
+      "--- International Travel Daily Allowance ---"
+    ]
+  },
+  {
+    "id": "neg_employee_health_insurance",
+    "category": "adjacent_benefit",
+    "query": "What does the employee health insurance plan cover?",
+    "expected_titles": [],
+    "forbidden_titles": [
+      "--- International Travel Insurance ---"
+    ]
+  },
+  {
+    "id": "neg_paysiam_refund_fee",
+    "category": "unsupported_detail",
+    "query": "What is PaySiam's refund processing fee?",
+    "expected_titles": [],
+    "forbidden_titles": [
+      "--- PaySiam Gateway Product Overview ---"
+    ]
+  },
+  {
+    "id": "neg_paysiam_chargebacks",
+    "category": "unsupported_detail",
+    "query": "How does PaySiam handle card chargebacks?",
+    "expected_titles": [],
+    "forbidden_titles": [
+      "--- PaySiam Gateway Product Overview ---"
+    ]
+  },
+  {
+    "id": "neg_customer_refund_sla",
+    "category": "adjacent_sla",
+    "query": "What is the customer refund SLA?",
+    "expected_titles": [],
+    "forbidden_titles": [
+      "--- Customer Support Service Levels ---",
+      "--- Expense Reimbursement ---"
+    ]
+  },
+  {
+    "id": "neg_vpn_account_unlock",
+    "category": "mentioned_system",
+    "query": "How do I unlock a disabled TigerLink VPN account?",
+    "expected_titles": [],
+    "forbidden_titles": [
+      "--- Remote Work Policy ---"
+    ]
+  },
+  {
+    "id": "neg_spacely_cancellation",
+    "category": "mentioned_system",
+    "query": "What is SpaceLy's desk reservation cancellation policy?",
+    "expected_titles": [],
+    "forbidden_titles": [
+      "--- Hybrid Work Guidelines ---"
+    ]
+  },
+  {
+    "id": "neg_travelhub_password_reset",
+    "category": "mentioned_system",
+    "query": "How do I reset my TravelHub password?",
+    "expected_titles": [],
+    "forbidden_titles": [
+      "--- International Travel Approval Process ---"
+    ]
+  },
+  {
+    "id": "neg_ceo_salary",
+    "category": "sensitive_absent",
+    "query": "What is the CEO's annual salary?",
+    "expected_titles": [],
+    "forbidden_titles": []
+  },
+  {
+    "id": "neg_manager_phone_number",
+    "category": "sensitive_absent",
+    "query": "What is my line manager's mobile phone number?",
+    "expected_titles": [],
+    "forbidden_titles": [
+      "--- Expense Reimbursement ---"
+    ]
+  }
+]
