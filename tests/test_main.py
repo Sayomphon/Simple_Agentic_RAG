@@ -6,18 +6,46 @@ import sys
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
+from types import SimpleNamespace
 from unittest.mock import Mock, call, patch
 
 import main as cli
+from src.agents.reporter import NOT_FOUND_SENTENCE
+
+
+def _stream_events(
+    snippets: list[str],
+    report: str,
+    chunks: tuple[str, ...] = (),
+) -> list[tuple[str, object]]:
+    """Build the (mode, payload) events graph.stream would yield."""
+    events: list[tuple[str, object]] = [
+        ("updates", {"data_retriever": {"snippets": snippets}})
+    ]
+    events.extend(
+        (
+            "messages",
+            (
+                SimpleNamespace(text=chunk),
+                {"langgraph_node": "report_generator"},
+            ),
+        )
+        for chunk in chunks
+    )
+    events.append(("updates", {"report_generator": {"report": report}}))
+    return events
 
 
 class MainTests(unittest.TestCase):
     def test_run_query_wraps_graph_error_and_preserves_cause(self) -> None:
         graph = Mock()
         original_error = RuntimeError("provider failure")
-        graph.invoke.side_effect = original_error
+        graph.stream.side_effect = original_error
 
-        with self.assertRaises(cli.QueryExecutionError) as context:
+        with (
+            self.assertRaises(cli.QueryExecutionError) as context,
+            redirect_stdout(StringIO()),
+        ):
             cli.run_query(graph, "sensitive user query")
 
         self.assertIs(context.exception.__cause__, original_error)
@@ -25,19 +53,78 @@ class MainTests(unittest.TestCase):
 
     def test_successful_run_query_renders_and_returns_result(self) -> None:
         graph = Mock()
-        graph.invoke.return_value = {
-            "query": "international travel",
-            "snippets": ["--- Travel ---\nGrounded evidence."],
-            "report": "Grounded answer.",
-        }
+        graph.stream.return_value = iter(
+            _stream_events(
+                snippets=["--- Travel ---\nGrounded evidence."],
+                report="Grounded answer.",
+                chunks=("Grounded ", "answer."),
+            )
+        )
         output = StringIO()
 
         with redirect_stdout(output):
             result = cli.run_query(graph, "international travel")
 
         self.assertEqual(result["report"], "Grounded answer.")
+        self.assertEqual(
+            result["snippets"], ["--- Travel ---\nGrounded evidence."]
+        )
         self.assertIn("--- Travel ---\nGrounded evidence.", output.getvalue())
         self.assertIn("Grounded answer.", output.getvalue())
+
+    def test_streamed_answer_matches_final_report_byte_for_byte(self) -> None:
+        # Chunks carry the leading/trailing whitespace that the generator
+        # strips from the state report; the screen must show the report text.
+        graph = Mock()
+        graph.stream.return_value = iter(
+            _stream_events(
+                snippets=["--- Travel ---\nGrounded evidence."],
+                report="Grounded answer.",
+                chunks=("  Grounded ", "answer.", "  "),
+            )
+        )
+        output = StringIO()
+
+        with redirect_stdout(output):
+            result = cli.run_query(graph, "international travel")
+
+        rendered_answer = (
+            output.getvalue().split("[3] FINAL ANSWER\n", 1)[1].rsplit(
+                cli.BANNER, 1
+            )[0]
+        )
+        self.assertEqual(rendered_answer.strip("\n"), result["report"])
+
+    def test_not_found_path_renders_without_token_stream(self) -> None:
+        graph = Mock()
+        graph.stream.return_value = iter(
+            _stream_events(snippets=[], report=NOT_FOUND_SENTENCE)
+        )
+        output = StringIO()
+
+        with redirect_stdout(output):
+            result = cli.run_query(graph, "What is the CEO's salary?")
+
+        self.assertEqual(result["report"], NOT_FOUND_SENTENCE)
+        self.assertIn("(none)", output.getvalue())
+        self.assertIn(NOT_FOUND_SENTENCE, output.getvalue())
+
+    def test_divergent_stream_preview_still_ends_with_the_report(self) -> None:
+        graph = Mock()
+        graph.stream.return_value = iter(
+            _stream_events(
+                snippets=["--- Travel ---\nGrounded evidence."],
+                report="Authoritative answer.",
+                chunks=("Different preview",),
+            )
+        )
+        output = StringIO()
+
+        with redirect_stdout(output):
+            result = cli.run_query(graph, "international travel")
+
+        self.assertEqual(result["report"], "Authoritative answer.")
+        self.assertIn("Authoritative answer.", output.getvalue())
 
     @patch("main.run_query")
     @patch("main.build_graph")
@@ -87,13 +174,14 @@ class MainTests(unittest.TestCase):
     ) -> None:
         raw_query = "customer secret query"
         secret = "credential-shaped-secret"
-        mock_build_graph.return_value.invoke.side_effect = RuntimeError(
+        mock_build_graph.return_value.stream.side_effect = RuntimeError(
             f"{raw_query}: {secret}"
         )
         stderr = StringIO()
 
         with (
             patch.object(sys, "argv", ["main.py", raw_query]),
+            redirect_stdout(StringIO()),
             redirect_stderr(stderr),
         ):
             exit_status = cli.main()
@@ -148,8 +236,11 @@ class MainTests(unittest.TestCase):
 
         for process_signal in (KeyboardInterrupt(), SystemExit(2)):
             with self.subTest(signal=type(process_signal).__name__):
-                graph.invoke.side_effect = process_signal
-                with self.assertRaises(type(process_signal)):
+                graph.stream.side_effect = process_signal
+                with (
+                    self.assertRaises(type(process_signal)),
+                    redirect_stdout(StringIO()),
+                ):
                     cli.run_query(graph, "query")
 
 

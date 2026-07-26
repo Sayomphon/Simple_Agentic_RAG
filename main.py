@@ -33,32 +33,74 @@ def require_api_key() -> None:
         )
 
 
-def run_query(graph: CompiledStateGraph, query: str) -> dict[str, object]:
-    """Run one query and print the evidence handoff before the final answer."""
-    initial_state = {"query": query, "snippets": [], "report": ""}
-    try:
-        result = graph.invoke(initial_state)
-    except Exception as exc:
-        raise QueryExecutionError(
-            "The RAG pipeline could not process this query"
-        ) from exc
-
-    print(BANNER)
-    print("[1] USER QUERY")
-    print(query)
-    print(DIVIDER)
+def _print_snippet_block(snippets: list[str]) -> None:
+    """Render the evidence handoff as soon as the Retriever finishes."""
     print("[2] RETRIEVED SNIPPETS (Data Retriever -> Report Generator)")
-    if result["snippets"]:
-        for index, snippet in enumerate(result["snippets"], start=1):
+    if snippets:
+        for index, snippet in enumerate(snippets, start=1):
             print(f"\n({index})")
             print(snippet)
     else:
         print("(none)")
     print(DIVIDER)
     print("[3] FINAL ANSWER")
-    print(result["report"])
+
+
+def run_query(graph: CompiledStateGraph, query: str) -> dict[str, object]:
+    """Run one query, printing evidence and answer tokens as they arrive.
+
+    The streamed tokens are a preview only; the ``report`` field from the
+    final graph state remains the source of truth, and the text shown on
+    screen always ends byte-equal with it.
+    """
+    initial_state = {"query": query, "snippets": [], "report": ""}
+
     print(BANNER)
-    return dict(result)
+    print("[1] USER QUERY")
+    print(query)
+    print(DIVIDER)
+
+    snippets: list[str] = []
+    report = ""
+    streamed = ""
+    emitted = ""
+    try:
+        events = graph.stream(initial_state, stream_mode=["updates", "messages"])
+        for mode, payload in events:
+            if mode == "updates":
+                for node_name, update in payload.items():
+                    if node_name == "data_retriever":
+                        snippets = list(update["snippets"])
+                        _print_snippet_block(snippets)
+                    elif node_name == "report_generator":
+                        report = update["report"]
+            elif mode == "messages":
+                chunk, metadata = payload
+                if metadata.get("langgraph_node") != "report_generator":
+                    continue
+                # The stripped running text only ever grows by appending, so
+                # printing its unseen suffix streams the answer while matching
+                # the generator's whitespace-trimmed final report.
+                streamed += str(chunk.text)
+                visible = streamed.strip()
+                if len(visible) > len(emitted):
+                    print(visible[len(emitted) :], end="", flush=True)
+                    emitted = visible
+    except Exception as exc:
+        raise QueryExecutionError(
+            "The RAG pipeline could not process this query"
+        ) from exc
+
+    if report.startswith(emitted):
+        print(report[len(emitted) :])
+    else:
+        # The preview diverged from the authoritative report (unusual model
+        # content); finish with the exact report so the screen stays truthful.
+        if emitted:
+            print()
+        print(report)
+    print(BANNER)
+    return {"query": query, "snippets": snippets, "report": report}
 
 
 def _print_query_error(error: QueryExecutionError) -> None:

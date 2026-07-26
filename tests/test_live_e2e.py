@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 
 LIVE_TESTS_ENABLED = os.getenv("RUN_LIVE_LLM_TESTS") == "1"
 
@@ -86,6 +88,28 @@ class LiveLLMEndToEndTests(unittest.TestCase):
 
         self.assertEqual(result["snippets"], [])
         self.assertEqual(result["report"], NOT_FOUND_SENTENCE)
+
+    def test_streamed_cli_answer_is_byte_equal_with_the_state_report(self) -> None:
+        import main as cli
+
+        output = StringIO()
+        try:
+            with redirect_stdout(output):
+                result = cli.run_query(
+                    self.graph,
+                    "How much is the daily allowance for international travel?",
+                )
+        except cli.QueryExecutionError:
+            raise AssertionError(
+                "Live streamed pipeline failed; inspect secure provider logs"
+            ) from None
+
+        rendered_answer = (
+            output.getvalue()
+            .split("[3] FINAL ANSWER\n", 1)[1]
+            .rsplit(cli.BANNER, 1)[0]
+        )
+        self.assertEqual(rendered_answer.strip("\n"), result["report"])
 
 
 if __name__ == "__main__":
