@@ -285,7 +285,7 @@ output by default.
 
 Using Python 3.11.15 in the repository's clean virtual environment:
 
-- all 147 offline unit tests pass (5 live tests skipped by default);
+- all 149 offline unit tests pass (5 live tests skipped by default);
 - the knowledge base loads as exactly 10 ordered sections;
 - retrieval results are deterministic for repeated queries, and the parse
   cache invalidates on file change in default lexical mode;

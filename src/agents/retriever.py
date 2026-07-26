@@ -74,6 +74,7 @@ def _validated_sub_queries(response: object) -> list[str]:
         )
 
     sub_queries: list[str] = []
+    seen: set[str] = set()
     for tool_call in tool_calls:
         if not isinstance(tool_call, Mapping):
             raise RetrievalProtocolError(
@@ -93,6 +94,14 @@ def _validated_sub_queries(response: object) -> list[str]:
             raise RetrievalProtocolError(
                 "Data Retriever requested a tool call without a query"
             )
+        if len(sub_query) > MAX_QUERY_CHARS:
+            raise RetrievalProtocolError(
+                "Data Retriever requested a sub-query longer than "
+                f"{MAX_QUERY_CHARS} characters"
+            )
+        if sub_query in seen:
+            continue
+        seen.add(sub_query)
         sub_queries.append(sub_query)
     return sub_queries
 

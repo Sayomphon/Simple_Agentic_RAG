@@ -7,7 +7,7 @@
 
 ![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/Orchestration-LangGraph-1C3C3C)
-![Tests](https://img.shields.io/badge/tests-147%20passing%20%7C%205%20live%20skipped-brightgreen)
+![Tests](https://img.shields.io/badge/tests-149%20passing%20%7C%205%20live%20skipped-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 This repository is a deliberately small implementation of the
@@ -479,7 +479,7 @@ Run the complete default suite:
 python -m unittest discover -v
 ```
 
-The default run discovers **152 tests**: **147 pass offline** and the **5 live
+The default run discovers **154 tests**: **149 pass offline** and the **5 live
 tests are skipped**. It covers:
 
 - knowledge-base loading, section splitting, and parse-cache invalidation;

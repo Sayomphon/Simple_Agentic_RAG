@@ -131,6 +131,62 @@ class AgentAndGraphTests(unittest.TestCase):
 
     @patch("src.agents.retriever.search_knowledge_base")
     @patch("src.agents.retriever.get_llm")
+    def test_retriever_rejects_oversized_model_generated_sub_query(
+        self,
+        mock_get_llm: Mock,
+        mock_tool: Mock,
+    ) -> None:
+        self._configure_tool(mock_tool)
+        bound_llm = Mock()
+        bound_llm.invoke.return_value = SimpleNamespace(
+            tool_calls=[
+                {
+                    "name": "search_knowledge_base",
+                    "args": {"query": "x" * (MAX_QUERY_CHARS + 1)},
+                }
+            ]
+        )
+        mock_get_llm.return_value.bind_tools.return_value = bound_llm
+
+        with self.assertRaisesRegex(
+            RetrievalProtocolError,
+            str(MAX_QUERY_CHARS),
+        ):
+            retriever_node(self._state("annual leave"))
+
+        mock_tool.invoke.assert_not_called()
+
+    @patch("src.agents.retriever.search_knowledge_base")
+    @patch("src.agents.retriever.get_llm")
+    def test_retriever_executes_duplicate_sub_query_only_once(
+        self,
+        mock_get_llm: Mock,
+        mock_tool: Mock,
+    ) -> None:
+        self._configure_tool(mock_tool)
+        duplicate_call = {
+            "name": "search_knowledge_base",
+            "args": {"query": "annual leave allowance"},
+        }
+        bound_llm = Mock()
+        bound_llm.invoke.return_value = SimpleNamespace(
+            tool_calls=[duplicate_call, duplicate_call]
+        )
+        mock_get_llm.return_value.bind_tools.return_value = bound_llm
+        mock_tool.invoke.return_value = []
+
+        retriever_node(self._state("annual leave"))
+
+        self.assertEqual(
+            mock_tool.invoke.call_args_list,
+            [
+                call({"query": "annual leave"}),
+                call({"query": "annual leave allowance"}),
+            ],
+        )
+
+    @patch("src.agents.retriever.search_knowledge_base")
+    @patch("src.agents.retriever.get_llm")
     def test_retriever_raises_for_unexpected_tool_name(
         self,
         mock_get_llm: Mock,

@@ -601,11 +601,16 @@
     }
   }
 
-  function renderToolCall(query) {
-    el.toolCall.innerHTML =
-      '<span class="fn">search_knowledge_base</span>({ query: "' +
-      escapeHtml(query) +
-      '" })';
+  function renderToolCalls(queries) {
+    el.toolCall.innerHTML = queries
+      .map(function (query) {
+        return (
+          '<span class="fn">search_knowledge_base</span>({ query: ' +
+          escapeHtml(JSON.stringify(query)) +
+          " })"
+        );
+      })
+      .join("\n");
     markMonoOverflow(document);
   }
 
@@ -626,7 +631,10 @@
     var telemetry = summarizeTelemetry(result);
     var emptyAttempts = telemetry.noQueryTerms + telemetry.gatedOut;
 
-    renderToolCall(result.query);
+    var attemptedQueries = (result.retrievalTelemetry || []).map(function (attempt) {
+      return attempt.query;
+    });
+    renderToolCalls(attemptedQueries.length ? attemptedQueries : [result.query]);
     el.retrieverMeta.innerHTML = metaHtml([
       ["Tool calls", telemetry.attempts ? String(telemetry.attempts) : "1"],
       ["Snippets returned", String(count)],
@@ -752,7 +760,7 @@
     el.copyAnswer.hidden = true;
 
     el.stageQuery.textContent = query;
-    renderToolCall(query);
+    renderToolCalls([query]);
     el.retrieverMeta.innerHTML = "";
     el.generatorMeta.innerHTML = "";
     el.answerMeta.innerHTML = "";

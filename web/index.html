@@ -210,8 +210,8 @@
             <div class="step-body" id="step-body-retriever">
               <div class="step-body-inner">
                 <p class="step-note">
-                  Calls the retrieval tool once and hands its output on untouched — it never
-                  answers, summarises, or rewrites.
+                  Runs the original query plus up to three focused sub-queries, then hands raw
+                  tool output onward unchanged — it never answers, summarises, or rewrites.
                 </p>
                 <div class="mono-scroll"><pre class="tool-call" id="stage-tool-call"><code></code></pre></div>
                 <dl class="meta" id="retriever-meta"></dl>
@@ -246,8 +246,8 @@
             <div class="step-body" id="step-body-evidence">
               <div class="step-body-inner">
                 <p class="step-note">
-                  Raw sections exactly as returned by the tool. Scores are title-weighted
-                  term-match values — higher is more relevant.
+                  Raw sections exactly as returned by the tool. Scores are strategy-specific;
+                  method badges identify lexical, semantic, or combined evidence.
                 </p>
                 <div class="clamp" id="evidence-clamp">
                   <div id="evidence-list" class="evidence-list"></div>
