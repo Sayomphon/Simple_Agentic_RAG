@@ -1,39 +1,200 @@
 # Simple Agentic RAG
 
-> An auditable two-agent RAG pipeline built with LangGraph and OpenAI.
-> It retrieves raw evidence from a local knowledge base, hands that evidence
-> between agents through typed shared state, and produces a grounded answer—or
-> a deterministic not-found response when the knowledge base has no answer.
+> A two-agent LangGraph pipeline where the retrieval step is **auditable**: the
+> Data Retriever hands raw knowledge-base sections to the Report Generator
+> through typed shared state, so every sentence of the final answer can be
+> traced back to source text. Unlike a basic RAG script, grounding is enforced
+> in code — citations are validated at runtime and an empty retrieval returns a
+> byte-exact not-found sentence with no LLM call at all.
 
 ![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/Orchestration-LangGraph-1C3C3C)
-![Tests](https://img.shields.io/badge/tests-149%20passing%20%7C%205%20live%20skipped-brightgreen)
+![Tests](https://img.shields.io/badge/tests-161%20passing%20%7C%205%20live%20skipped-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-This repository is a deliberately small implementation of the
-AI Engineer Programming Test. It focuses
-on the assignment's core engineering concerns: clear agent responsibilities, a
-custom Retrieval-Augmented Generation (RAG) tool, explicit orchestration,
-inspectable evidence handoff, grounded generation, and reproducible offline
-tests.
+## TL;DR
 
-## What the system does
+- **Two agents, one fixed sequential graph:** `START → data_retriever → report_generator → END`, no router and no retry loop.
+- **The Retriever never answers.** It is forced to call one custom tool, `search_knowledge_base`, and passes back raw, unmodified sections.
+- **The Generator answers only from those sections,** merges duplicates, cites `[Section Title]`, and every citation is checked in code against the evidence actually handed off.
+- **No evidence means no answer:** zero snippets short-circuit to a fixed sentence without a model call, so a knowledge-base gap can never become a hallucination.
+- **Quality is measured, not asserted:** retrieval and answer metrics come from runners in this repository, over a calibration set, a held-out set, hard negatives, and a Thai cross-language slice.
 
-A user asks a question about the fictional **Siam Innovate** knowledge base.
-The system then:
+Set it up: [Quick start](#quick-start). See it working first: [Demo](#demo).
 
-1. sends the question to a **Data Retriever Agent**;
-2. forces that agent to request the custom `search_knowledge_base` tool;
-3. retrieves relevant sections from `knowledge_base.txt`;
-4. passes the raw sections to a **Report Generator Agent** through LangGraph
-   state; and
-5. produces a concise answer based only on those sections.
+## Assignment fit
 
-Both front ends — the CLI and the bundled web UI — display the query, retrieved
-evidence, and final answer as separate stages, making the RAG handoff easy to
-audit.
+This repository is a submission for the **AI Engineer Programming Test:
+Agentic AI**. Each evaluation criterion from the brief maps to a specific place
+in the code.
 
-### Key properties
+| Assignment requirement | Where it is implemented |
+|---|---|
+| *"Correct use of the chosen framework to define agents and orchestrate the workflow."* — LangGraph, with a **sequential workflow where the Data Retriever's output is passed as input to the Report Generator** | [src/graph.py](src/graph.py) compiles exactly two nodes and three fixed edges over a typed `PipelineState`; [src/agents/retriever.py](src/agents/retriever.py) and [src/agents/reporter.py](src/agents/reporter.py) are the two agent nodes. Guarded by [tests/test_assignment_invariants.py](tests/test_assignment_invariants.py). See [Architecture](#architecture). |
+| *"Effective implementation of the RAG mechanism (the custom data retrieval tool)."* — a **custom Python function/tool that reads `knowledge_base.txt` and performs a simple keyword or basic semantic search** | [src/tools/retrieval.py](src/tools/retrieval.py) is the `@tool`-decorated seam (`query: str -> list[str]`); [src/retrievers/](src/retrievers/) holds the lexical (default, offline), semantic, and hybrid strategies. See [Retrieval design](#retrieval-design) and measured numbers in [Evaluation](#evaluation). |
+| *"Clarity and quality of the final output (non-redundant, accurate based on provided info, well-formatted)."* — the Report Generator as **expert writer and synthesizer**, with **no additional tools** | [src/agents/reporter.py](src/agents/reporter.py): grounded prompt, duplicate-fact merging, runtime citation validation, deterministic not-found. Scored on 57 labeled queries in [answer_eval_results.md](answer_eval_results.md); see [Answer-level results](#answer-level-results). |
+| *"Code structure, readability, and adherence to Python best practices."* | Layered packages (`agents/`, `retrievers/`, `tools/`, `evaluation/`), typed contracts and frozen dataclasses in [src/retrievers/base.py](src/retrievers/base.py), named exception types per failure boundary, and 166 tests of which 161 run with no API key and no network access. See [Project structure](#project-structure) and [Tests](#tests). |
+
+The three artefacts the brief asks candidates to submit:
+
+| Deliverable | Location |
+|---|---|
+| *"the complete Python code"* | [main.py](main.py) (CLI) and [src/](src/); plus a dependency-free [web/](web/) front end |
+| *"the `knowledge_base.txt` file"* | [knowledge_base.txt](knowledge_base.txt) — 10 delimited sections about the fictional **Siam Innovate** |
+| *"a screenshot of the final output for a few different queries"* | [screenshots/](screenshots/), shown inline under [Demo](#demo) |
+
+Two role boundaries from the brief are enforced rather than merely prompted.
+The Data Retriever *"does not answer questions directly but provides relevant
+text snippets"* — so its model output is never treated as evidence, only its
+tool call is. The Report Generator needs *"no additional tools"* — a test
+asserts `bind_tools` is never called on it. In an enterprise setting, that
+separation is what makes an answer reviewable: retrieval quality and writing
+quality fail in different places and can be diagnosed independently.
+
+## Contents
+
+- [TL;DR](#tldr)
+- [Assignment fit](#assignment-fit)
+- [Demo](#demo)
+  - [International travel query](#international-travel-query)
+  - [Remote work query](#remote-work-query)
+  - [Unanswerable query](#unanswerable-query)
+  - [Thai query](#thai-query)
+  - [Web interface](#web-interface)
+- [Key properties](#key-properties)
+- [Architecture](#architecture)
+  - [Execution order](#execution-order)
+  - [Agent responsibilities](#agent-responsibilities)
+- [Quick start](#quick-start)
+  - [Configuration](#configuration)
+  - [Run the CLI](#run-the-cli)
+  - [Run the web interface](#run-the-web-interface)
+- [Retrieval design](#retrieval-design)
+  - [Retrieval modes](#retrieval-modes)
+  - [The lexical pipeline](#the-lexical-pipeline)
+  - [Semantic and hybrid modes](#semantic-and-hybrid-modes)
+- [Evaluation](#evaluation)
+  - [Datasets](#datasets)
+  - [Retrieval results](#retrieval-results)
+  - [What each design layer buys](#what-each-design-layer-buys)
+  - [Answer-level results](#answer-level-results)
+  - [Evaluation limitations](#evaluation-limitations)
+- [Tests](#tests)
+  - [The offline suite](#the-offline-suite)
+  - [Evaluation and calibration commands](#evaluation-and-calibration-commands)
+  - [Opt-in live LLM integration](#opt-in-live-llm-integration)
+  - [Submission check](#submission-check)
+- [Technology stack](#technology-stack)
+- [Project structure](#project-structure)
+- [Design decisions](#design-decisions)
+- [Limitations and production next steps](#limitations-and-production-next-steps)
+- [License](#license)
+
+## Demo
+
+The images below were captured on **26 July 2026** and are direct renderings of
+the CLI's stdout from successful live runs with `gpt-5-mini` — not mock
+fixtures. Each one shows the three observable stages: the user query, the raw
+evidence handoff, and the final grounded answer.
+
+Together they cover the assignment-critical paths: multi-section synthesis,
+complementary related-section synthesis, and a knowledge-base gap that returns
+the exact fallback instead of inventing an answer.
+
+### International travel query
+
+The brief's own sample question. `What is the policy on international travel?`
+retrieves the Approval Process, Daily Allowance, and Insurance sections and
+merges them into one cohesive answer with per-section citations.
+
+![International travel query with three retrieved sections and a grounded answer](screenshots/01_international_travel.png)
+
+### Remote work query
+
+`Can I work remotely?` combines Remote Work Policy and Hybrid Work Guidelines
+without repeating the overlapping facts.
+
+![Remote work query with Remote Work and Hybrid Work evidence](screenshots/02_remote_work.png)
+
+### Unanswerable query
+
+`What is the CEO's salary?` has no supporting section. Retrieval reports why it
+returned nothing (`no section passed the relevance gate`) and the Report
+Generator returns the fixed sentence with **no LLM call**.
+
+![CEO salary query returning the deterministic not-found answer](screenshots/03_not_found.png)
+
+### Thai query
+
+A Thai question over the English knowledge base, recorded from the CLI on
+**26 July 2026** (transcript, not a screenshot). Attempt 1 runs the original
+Thai query and finds no searchable terms; the same Data Retriever Agent then
+issues one faithful English translation sub-query, which recovers all three
+travel sections. The Reporter answers in Thai while keeping numbers, currency
+codes, system names, and citation titles verbatim:
+
+```text
+[1] USER QUERY
+นโยบายการเดินทางต่างประเทศคืออะไร
+--------------------------------------------------------------------
+[2] RETRIEVED SNIPPETS (Data Retriever -> Report Generator)
+
+#1 [International Travel Approval Process] score=3.2177 method=lexical
+#2 [International Travel Daily Allowance] score=3.2177 method=lexical
+#3 [International Travel Insurance] score=3.2177 method=lexical
+
+mode=lexical attempts=2 retrieval=3.92ms
+attempt 1: query produced no searchable terms (lexical mode)
+--------------------------------------------------------------------
+[3] FINAL ANSWER
+นโยบายการเดินทางต่างประเทศคือชุดกฎและขั้นตอนสำหรับการเดินทางเพื่อธุรกิจของพนักงาน
+ซึ่งในความรู้ที่ให้มาจะครอบคลุมสามด้านหลักดังนี้
+
+- การอนุมัติการเดินทาง: พนักงานต้องได้รับการอนุมัติเป็นลายลักษณ์อักษรจากหัวหน้าฝ่าย
+  อย่างน้อย 14 วันก่อนออกเดินทาง โดยยื่นคำขอผ่าน TravelHub ภายใต้หัวข้อ
+  "Overseas Trip Request" … [International Travel Approval Process].
+- เบี้ยเลี้ยงและที่พัก: … 2,400 THB ต่อวัน … (1,200 THB) … 5,500 THB ต่อคืน …
+  [International Travel Daily Allowance].
+- ประกันการเดินทาง: … SafeJourney Plan B … 3,000,000 THB …
+  [International Travel Insurance].
+```
+
+*(Body text of the second and third bullets abridged with `…`; the retrieval
+stage above is verbatim.)*
+
+No translator node, query-rewriter agent, or conditional edge was added for
+this — it is the same two agents. The measured limits of the Thai path are
+reported honestly in [Retrieval results](#retrieval-results) and
+[Limitations](#limitations-and-production-next-steps).
+
+### Web interface
+
+The bundled single-page UI renders the same workflow as five sequential stages,
+keeping raw evidence visually separate from the synthesised answer. These
+screenshots come from the UI running on **mock fixtures** copied verbatim from
+`knowledge_base.txt`, not from a live provider call.
+
+The sequence is organised around inspectability: graph topology before
+execution, per-stage progress, forced tool use, raw evidence handoff, grounded
+citations, deterministic not-found behaviour, explicit backend failures, and
+responsive operation.
+
+| State | Screenshot |
+|---|---|
+| Empty state — both agents and the fixed topology are visible before any query is submitted | ![Web UI empty state with the two-agent topology visible](screenshots/ui_01_empty.png) |
+| International travel — step 2 shows the forced single tool call with the query unchanged, step 3 shows all three sections raw, step 5 shows the cited answer | ![Web UI with three raw sections and a grounded answer](screenshots/ui_03_international_travel.png) |
+| Not-found guardrail — no section clears the gate, so the evidence panel reports *No evidence found* and the deterministic sentence is returned without an LLM call | ![Web UI showing the not-found state with zero snippets](screenshots/ui_04_not_found.png) |
+| Loading — each stage reports its own status so the Retriever → Evidence → Generator → Answer sequence stays visible in flight | ![Web UI running with per-stage status badges and skeletons](screenshots/ui_02_running.png) |
+| Compact audit bar — once the query card scrolls away, the sticky bar preserves run outcome, query, and grounding count | ![Web UI compact status bar while reviewing a grounded answer](screenshots/ui_08_compact_bar.png) |
+| Backend failure — a failure is **not** converted into a not-found; unfinished stages are marked *Failed*, matching CLI semantics | ![Web UI error state after a backend protocol failure](screenshots/ui_05_error.png) |
+
+The same five stages on an exact 390 px viewport and in the dark colour scheme:
+
+| Mobile | Dark |
+|---|---|
+| ![Web UI on a mobile viewport](screenshots/ui_06_mobile_remote_work.png) | ![Web UI in dark theme](screenshots/ui_07_dark.png) |
+
+## Key properties
 
 - **Two specialized agents:** retrieval and answer synthesis have separate
   responsibilities.
@@ -77,25 +238,57 @@ audit.
 
 ## Architecture
 
+A user asks a question about the fictional **Siam Innovate** knowledge base.
+The system then:
+
+1. sends the question to a **Data Retriever Agent**;
+2. forces that agent to request the custom `search_knowledge_base` tool;
+3. retrieves relevant sections from `knowledge_base.txt`;
+4. passes the raw sections to a **Report Generator Agent** through LangGraph
+   state; and
+5. produces a concise answer based only on those sections.
+
+Solid arrows are the graph's fixed path. Dotted arrows are the two side paths:
+the no-evidence short circuit, and display-only telemetry that never reaches a
+prompt.
+
 ```mermaid
 flowchart LR
-    U["User query"] --> R
+    U(["User query"]) --> R
 
-    subgraph LG["LangGraph — fixed sequential workflow"]
-        R["Data Retriever Agent<br/>forced tool request"]
-        H["Shared state<br/>snippets: list[str]"]
-        G["Report Generator Agent<br/>grounded synthesis"]
-        R -->|"raw snippets"| H
-        H --> G
+    subgraph LG["LangGraph &middot; two nodes, fixed edges, no router"]
+        direction LR
+        R["<b>1 &middot; data_retriever</b><br/>Data Retriever Agent<br/>tool_choice = required<br/>never answers"]
+        G["<b>2 &middot; report_generator</b><br/>Report Generator Agent<br/>no tools<br/>answers only from snippets"]
+        R ==>|"<b>snippets: list[str]</b><br/>raw sections, byte-exact"| G
     end
 
-    R -->|"search_knowledge_base(query)"| T["Custom retrieval tool"]
-    T -->|"read and score sections"| KB[("knowledge_base.txt<br/>10 sections")]
-    KB -->|"raw matching sections"| T
-    T --> R
+    R <-->|"original query first,<br/>then differing sub-queries"| T
 
-    G -->|"evidence available"| A["Grounded answer"]
-    G -.->|"no evidence · no LLM call"| N["Deterministic not-found"]
+    subgraph TOOL["custom RAG tool &middot; plain Python, no LLM, no vector DB"]
+        direction LR
+        T["<b>search_knowledge_base</b><br/>(query: str) → list[str]"]
+        SC["scoring +<br/>relevance gate<br/>lexical (default)<br/>semantic &middot; hybrid"]
+        KB[("knowledge_base.txt<br/>10 delimited<br/>sections")]
+        T --> SC --> KB
+    end
+
+    G ==>|"evidence available"| A(["<b>Grounded answer</b><br/>with [Section Title]<br/>citations"])
+    G -.->|"snippets empty"| N(["<b>Deterministic not-found</b><br/>fixed sentence<br/>no LLM call"])
+    T -.->|"score &middot; method &middot; latency"| M["retrieval_telemetry<br/>display only, never in a prompt"]
+
+    style LG fill:#f1f5f9,stroke:#94a3b8,stroke-width:1px
+    style TOOL fill:#f0fdf4,stroke:#86efac,stroke-width:1px
+    classDef agent fill:#e0e7ff,stroke:#4f46e5,stroke-width:2px,color:#1e1b4b
+    classDef toolbox fill:#d1fae5,stroke:#059669,stroke-width:2px,color:#064e3b
+    classDef store fill:#fef3c7,stroke:#b45309,stroke-width:2px,color:#451a03
+    classDef result fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#0b2545
+    classDef aside fill:#ffffff,stroke:#94a3b8,stroke-width:1px,color:#0f172a
+    class R,G agent
+    class T,SC toolbox
+    class KB store
+    class U,A,N result
+    class M aside
 ```
 
 The graph topology has no router, retry loop, or conditional retrieval path:
@@ -120,9 +313,57 @@ class PipelineState(TypedDict):
 the Reporter continues to construct its prompt from `query` and `snippets`
 only.
 
+Both front ends — the CLI and the bundled web UI — display the query, retrieved
+evidence, and final answer as separate stages, making the RAG handoff easy to
+audit.
+
+### Execution order
+
+The two nodes above hide one detail that matters for recall: the Retriever does
+not simply forward whatever the model planned. It runs the original query
+itself first, then adds each differing sub-query, so the handoff is provably a
+superset of a single deterministic search. Three guards fail loudly rather than
+degrading into a plausible-looking empty result.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant R as data_retriever
+    participant T as search_knowledge_base
+    participant K as knowledge_base.txt
+    participant G as report_generator
+
+    U->>R: query
+    Note over R: guard 1 — reject empty, whitespace-only,<br/>or over-2,000-character queries<br/>before any provider call
+    R->>R: LLM plans 1–3 tool calls (tool_choice = required)
+    Note over R: guard 2 — reject a wrong tool name, no call,<br/>too many calls, or an empty sub-query
+    R->>T: search(original query) · deterministic baseline
+    T->>K: read and score every section
+    K-->>T: sections passing the relevance gate
+    T-->>R: raw list[str]
+    loop each planned sub-query that differs (0–3 more searches)
+        R->>T: search(sub-query)
+        T-->>R: raw list[str]
+    end
+    Note over R: union, deduplicated by exact text —<br/>always a superset of the baseline result
+    R->>G: snippets: list[str] through shared state
+    alt snippets is empty
+        G-->>U: fixed not-found sentence · no LLM call
+    else evidence available
+        G->>G: grounded synthesis from the snippets only
+        Note over G: guard 3 — every [Section Title] citation<br/>must name a handed-off section
+        G-->>U: cited answer in the user's language
+    end
+```
+
+The Thai run under [Demo](#demo) is this path with two searches: attempt 1 on
+the raw Thai query finds no searchable terms, and the model's English
+translation sub-query recovers the evidence.
+
 ### Agent responsibilities
 
-#### 1. Data Retriever Agent
+**1. Data Retriever Agent** ([src/agents/retriever.py](src/agents/retriever.py))
 
 - rejects empty, whitespace-only, and over-length (> 2,000 characters)
   queries before any LLM call;
@@ -141,7 +382,7 @@ only.
 - writes that raw `list[str]` to `state["snippets"]`; and
 - never produces the user-facing answer.
 
-#### 2. Report Generator Agent
+**2. Report Generator Agent** ([src/agents/reporter.py](src/agents/reporter.py))
 
 - receives only the user query and retrieved snippets;
 - has no tools;
@@ -160,184 +401,6 @@ only.
 
 ```text
 I could not find this information in the knowledge base.
-```
-
-## Retrieval design
-
-`knowledge_base.txt` contains 10 clearly delimited sections across workplace
-policies, international travel, expenses, a payment product, and customer
-support. Each section begins with a machine-readable heading:
-
-```text
---- Section Title ---
-Section content...
-```
-
-`src/tools/retrieval.py` is a thin, stable agent-facing wrapper. It always
-accepts `query: str` and returns raw `list[str]`, while a factory selects one
-of three internal strategies from `SEARCH_MODE`:
-
-| mode | implementation | network |
-|---|---|---|
-| `lexical` (default) | normalized weighted lexical scoring | offline |
-| `semantic` | `text-embedding-3-small` + cosine + calibrated threshold | OpenAI API |
-| `hybrid` | independently gated lexical/semantic results + RRF (`k=60`) | OpenAI API |
-
-The Data Retriever Agent cannot select or change this mode. That keeps
-latency, cost, and evaluation reproducible. The lexical implementation in
-`src/retrievers/lexical.py` uses this transparent pipeline:
-
-1. read `knowledge_base.txt` as UTF-8 (parsed sections are cached per file
-   identity — path, `mtime_ns`, size — so an edited file invalidates
-   naturally);
-2. reject empty files, missing section headings, and sections without bodies;
-3. split the document at section headings;
-4. normalize reviewed phrase aliases such as `work from home` → `remote work`
-   and `per diem` → `daily allowance`;
-5. canonicalize reviewed derivational variants and synonyms such as
-   `lodging` → `hotel`, `reimbursing` → `reimbursement`, and
-   `vacation` → `leave`;
-6. remove query framing, English stopwords, and broad enterprise terms from
-   query topic terms only;
-7. apply a light inflectional stemmer (`-s`/`-es`/`-ies`/`-ed`/`-ing` plus
-   final-e elision, run to an idempotent fixpoint) to both query and section
-   terms — after aliases, so reviewed mappings always win;
-8. calculate smoothed inverse document frequency (IDF) across the 10 sections;
-9. score each distinct query term once, with title matches weighted `1.5` and
-   body-only matches weighted `1.0`;
-10. admit a candidate when it has a title anchor or at least two matched terms;
-11. keep candidates scoring at least `60%` of the best score and at least
-    `1.0`;
-12. for a focused two-term topic, retain a lower-scoring sibling only when it
-    shares a title anchor with a full-coverage candidate;
-13. sort by descending score and then original document order; and
-14. return every section that passes the relevance gate—there is no fixed
-    `TOP_K`.
-
-The lexical constants are calibrated against the 27-case **calibration set** in
-`tests/fixtures/retrieval_cases.json` — the numbers on that set are a fit
-statistic, not a generalization estimate. The gate achieves 100% exact-case
-tuning set while remaining fully deterministic; generalization is measured
-separately on a held-out set (see [Evaluation](#evaluation)):
-
-| Query | Retrieved sections |
-|---|---|
-| `international travel` | Approval Process, Daily Allowance, Insurance |
-| `How many remote days are allowed?` | Remote Work |
-| `overseas business trip per diem` | Daily Allowance |
-| `annual vacation entitlements` | Annual Leave |
-| `international card fee` | PaySiam Gateway only |
-| `international travel insurance coverage` | Travel Insurance only |
-| `international travel approval, allowance, and insurance requirements` | All three Travel sections |
-| `escalate a P1 outage` | Support Escalation + Customer Support Levels |
-| `Can I work remotely?` | Remote Work + Hybrid Work |
-| `What is the CEO's salary?` | No sections |
-
-Semantic mode embeds the 10 raw sections in one batch, stores only numeric
-vectors in `.cache/embeddings/`, and invalidates that cache when either the
-embedding model or byte-relevant chunk content changes. Cache files are JSON
-(never executable pickle), atomically replaced, permission-restricted, size
-bounded, and validated for count, dimension, finite values, and non-zero
-norms. Every query makes one embedding request and performs an in-memory
-linear cosine scan; there is no vector database, ANN index, reranker, query
-rewrite, or silent fallback.
-
-`MIN_COSINE=0.392817` comes from the measured precision-weighted F0.5 sweep in
-[threshold_calibration.md](threshold_calibration.md). The positive and
-hard-negative distributions overlap, so no global threshold can provide both
-zero false positives and useful recall: the selected boundary yields 87.5%
-pair precision and 92.1% pair recall on the calibration pairs. The zero-FP
-boundary would reject all 38 measured positive pairs and is therefore
-reported, not deployed.
-
-Hybrid mode gates each side before fusion, uses rank-only Reciprocal Rank
-Fusion because lexical and cosine scores have incompatible scales, and
-deduplicates exact raw chunks. It is recall-oriented: measured held-out recall
-is 100%, but it inherits lexical false positives.
-
-The tool returns source sections as raw text. It never asks an LLM to search,
-summarize, enrich, rerank, or rewrite the evidence.
-
-## Technology stack
-
-| Component | Technology | Purpose |
-|---|---|---|
-| Runtime | Python 3.11 | Application and tests |
-| Orchestration | LangGraph | Fixed two-node workflow and shared state |
-| Agent/tool primitives | LangChain Core | Messages, tool schema, and invocation |
-| OpenAI integration | LangChain OpenAI | `ChatOpenAI` agents and `OpenAIEmbeddings` semantic mode |
-| Configuration | python-dotenv | Local environment configuration |
-| Knowledge store | UTF-8 text file | Small, inspectable evidence source |
-| Web UI | HTML, CSS, vanilla JS | Dependency-free stage-by-stage demo front end |
-| Testing | `unittest` | Offline regression and graph tests |
-
-## Project structure
-
-```text
-.
-├── main.py                       # CLI: single-query and interactive modes
-├── knowledge_base.txt            # 10-section local knowledge base
-├── requirements.txt              # pinned Python dependencies
-├── .env.example                  # safe configuration template
-├── LICENSE
-├── README.md
-├── screenshots/
-│   ├── 01_international_travel.png       # CLI runs
-│   ├── 02_remote_work.png
-│   ├── 03_not_found.png
-│   └── ui_01_empty.png … ui_08_compact_bar.png  # web UI states
-├── docs/
-│   └── DESIGN_NOTES.md           # engineering rationale and trade-offs
-├── evaluation_results.md         # generated multi-mode retrieval metrics
-├── threshold_calibration.md      # cosine-threshold provenance and trade-offs
-├── answer_eval_results.md        # generated by the opt-in live answer eval
-├── src/
-│   ├── config.py                 # models, retrieval mode, thresholds, paths
-│   ├── graph.py                  # PipelineState and LangGraph wiring
-│   ├── agents/
-│   │   ├── __init__.py           # per-model ChatOpenAI construction
-│   │   ├── retriever.py          # Data Retriever node
-│   │   └── reporter.py           # Report Generator node
-│   ├── evaluation/
-│   │   ├── calibrate_threshold.py # semantic threshold measurement
-│   │   ├── dataset.py            # shared fixture loader
-│   │   ├── metrics.py            # pure set-based retrieval metrics
-│   │   ├── ablation.py           # V0..V5 scoring-layer ladder
-│   │   ├── judges.py             # structured faithfulness/relevance judges
-│   │   ├── judge_reporting.py    # pure judged-metric Markdown rendering
-│   │   ├── run_retrieval_eval.py # lexical + semantic + hybrid evaluation
-│   │   └── run_answer_eval.py    # opt-in live answer eval runner
-│   ├── retrievers/
-│   │   ├── base.py               # Retriever, scored result, telemetry contracts
-│   │   ├── lexical.py            # measured offline implementation
-│   │   ├── semantic.py           # embeddings, cosine, validated disk cache
-│   │   ├── hybrid.py             # gate-first reciprocal-rank fusion
-│   │   └── factory.py            # lazy configuration-owned strategy factory
-│   └── tools/
-│       └── retrieval.py          # thin custom tool + compatibility exports
-├── tests/
-│   ├── fixtures/
-│   │   ├── retrieval_cases.json    # 27-case calibration set (tuning set)
-│   │   ├── retrieval_heldout.json  # 14-case held-out set (never tuned on)
-│   │   ├── retrieval_negatives.json # 12 intentional hard negatives
-│   │   ├── retrieval_thai.json     # 13-case held-out Thai slice
-│   │   └── answer_cases.json       # answer-quality facts and citations
-│   ├── test_assignment_invariants.py # assignment architecture guards
-│   ├── test_retrievers.py        # semantic, hybrid, cache, and factory tests
-│   ├── test_retrieval.py         # retrieval, stemming, and cache tests
-│   ├── test_evaluation.py        # dataset loader and metric tests
-│   ├── test_answer_judge.py      # offline judge schema/retry/error tests
-│   ├── test_graph.py             # agent behavior and graph handoff
-│   ├── test_live_e2e.py          # opt-in real provider integration
-│   ├── test_telemetry.py         # score/provenance/latency isolation tests
-│   └── test_main.py              # CLI streaming and failure recovery
-└── web/                          # dependency-free single-page UI
-    ├── index.html                # markup for the five pipeline stages
-    ├── styles.css                # tokens, badges, light and dark themes
-    ├── api.js                    # the only backend seam
-    ├── mock-data.js              # offline fixtures for the demo
-    ├── app.js                    # state and rendering
-    └── README.md                 # run and backend-wiring guide
 ```
 
 ## Quick start
@@ -361,6 +424,8 @@ On Windows, activate the environment with:
 ```powershell
 .venv\Scripts\activate
 ```
+
+### Configuration
 
 Add your API key to `.env`:
 
@@ -400,18 +465,23 @@ JUDGE_MODEL_NAME=gpt-5-mini
 | `RUN_LIVE_LLM_TESTS` | No | `0` | Set to `1` only when explicitly running live provider tests |
 | `LIVE_LLM_TEST_MODEL` | No | `gpt-5-mini` | Model used by the opt-in integration tests |
 
+Every setting is read once through [src/config.py](src/config.py), which treats
+a blank value such as `TEMPERATURE=` as unset, names the offending variable on
+malformed numeric input, and validates `SEARCH_MODE`, timeout, retry, cosine,
+and `RRF_K` ranges at import time.
+
 `.env` and virtual environments are ignored by Git. Never commit a real API
 key.
 
-## Run the application
+### Run the CLI
 
-### Single query
+Single query:
 
 ```bash
 python main.py "What is the policy on international travel?"
 ```
 
-### Interactive mode
+Interactive mode:
 
 ```bash
 python main.py
@@ -445,13 +515,9 @@ What is the CEO's salary?
 - The CEO salary query retrieves nothing and returns the deterministic
   not-found sentence.
 
-### Web interface
+All four are captured under [Demo](#demo).
 
-The repository also ships a single-page UI that renders the same workflow as
-five sequential stages. Each evidence card keeps the raw section separate from
-the synthesised answer while showing its `lexical`, `semantic`, or `both`
-provenance badge and score. Retriever metadata shows the configured mode,
-attempt count, empty-attempt reason, and total retrieval latency.
+### Run the web interface
 
 ```bash
 open web/index.html
@@ -459,9 +525,11 @@ open web/index.html
 
 There is no build step, no `npm install`, and no dependencies. The page starts on
 **bundled mock data** — fixtures copied verbatim from `knowledge_base.txt` — so
-every state is demonstrable offline, including the not-found guardrail.
-
-![Web UI empty state before the first query](screenshots/ui_01_empty.png)
+every state is demonstrable offline, including the not-found guardrail. Each
+evidence card keeps the raw section separate from the synthesised answer while
+showing its `lexical`, `semantic`, or `both` provenance badge and score.
+Retriever metadata shows the configured mode, attempt count, empty-attempt
+reason, and total retrieval latency.
 
 This repository contains no HTTP service, so live mode requires adding one.
 `web/api.js` is the single seam: point `CONFIG.endpoint` at a `POST /api/query`
@@ -471,128 +539,109 @@ route that returns `PipelineState` as JSON, including optional
 contract, including why an empty `snippets` array is a valid result rather than
 an error.
 
-## Tests
+## Retrieval design
 
-Run the complete default suite:
+`knowledge_base.txt` contains 10 clearly delimited sections across workplace
+policies, international travel, expenses, a payment product, and customer
+support. Each section begins with a machine-readable heading:
 
-```bash
-python -m unittest discover -v
+```text
+--- Section Title ---
+Section content...
 ```
 
-The default run discovers **154 tests**: **149 pass offline** and the **5 live
-tests are skipped**. It covers:
+### Retrieval modes
 
-- knowledge-base loading, section splitting, and parse-cache invalidation;
-- phrase/token normalization, query-framing removal, and the inflectional
-  stemmer (table-driven cases, corpus-wide idempotency, stopword-collision
-  guard);
-- deterministic IDF and weighted title/body scoring;
-- the 27-case calibration set (exact pass, precision/recall, unknown
-  rejection) via the shared evaluation metrics;
-- dataset-loader schema validation and hand-computed metric tests;
-- the ablation ladder's equivalence with production settings;
-- exact two-agent/sequential-graph assignment invariants and the unchanged
-  `query: str -> list[str]` tool contract;
-- per-mode telemetry population, thread isolation, consume-on-read behavior,
-  empty-reason diagnostics, optional graph state, and Reporter prompt
-  isolation;
-- semantic cosine validation, threshold gating, byte-exact raw chunk mapping,
-  missing-credential failure semantics, and document-cache reuse,
-  invalidation, corruption recovery, and file permissions;
-- hybrid gate-first RRF behavior, one-sided results, and exact deduplication;
-- lazy per-mode factory caching and unsupported-mode rejection;
-- hard-negative dataset validation and deterministic threshold-selection
-  tests for both clean-gap and overlapping distributions;
-- Retriever tool-call contract enforcement (1–3 calls, tool name,
-  non-empty sub-queries) and the baseline-union superset guarantee;
-- query validation (empty / whitespace / over-length) with no LLM call;
-- per-role LLM construction, timeout, and retry wiring;
-- strict structured-output judge schemas, application validation, bounded
-  parse retry, input limits, prompt-injection boundaries, and safe independent
-  `judge_error` handling;
-- citation validation, evidence-block wrapping, and injection-guard prompt
-  structure;
-- malformed knowledge-base rejection;
-- string and structured Report Generator output;
-- raw-snippet handoff through LangGraph and exact two-node topology;
-- deterministic not-found behavior without a Generator LLM call;
-- CLI streaming (screen text byte-equal with the state report), exception
-  chaining, safe error rendering, exit status, and interactive recovery.
+`src/tools/retrieval.py` is a thin, stable agent-facing wrapper. It always
+accepts `query: str` and returns raw `list[str]`, while a factory selects one
+of three internal strategies from `SEARCH_MODE`:
 
-The suite uses mocks at the LLM boundary, so it needs no API key and makes no
-network requests. The live tests remain skipped unless explicitly enabled.
+| mode | implementation | network |
+|---|---|---|
+| `lexical` (default) | normalized weighted lexical scoring | offline |
+| `semantic` | `text-embedding-3-small` + cosine + calibrated threshold | OpenAI API |
+| `hybrid` | independently gated lexical/semantic results + RRF (`k=60`) | OpenAI API |
 
-Run every production mode when an API key is available:
+The Data Retriever Agent cannot select or change this mode. That keeps
+latency, cost, and evaluation reproducible.
 
-```bash
-python -m src.evaluation.run_retrieval_eval
-```
+### The lexical pipeline
 
-Force the offline lexical-only evaluation (also usable as a CI gate — it
-exits non-zero if the current lexical variant misses its calibration
-thresholds):
+The lexical implementation in [src/retrievers/lexical.py](src/retrievers/lexical.py)
+uses this transparent pipeline:
 
-```bash
-OPENAI_API_KEY= python -m src.evaluation.run_retrieval_eval
-```
+1. read `knowledge_base.txt` as UTF-8 (parsed sections are cached per file
+   identity — path, `mtime_ns`, size — so an edited file invalidates
+   naturally);
+2. reject empty files, missing section headings, and sections without bodies;
+3. split the document at section headings;
+4. normalize reviewed phrase aliases such as `work from home` → `remote work`
+   and `per diem` → `daily allowance`;
+5. canonicalize reviewed derivational variants and synonyms such as
+   `lodging` → `hotel`, `reimbursing` → `reimbursement`, and
+   `vacation` → `leave`;
+6. remove query framing, English stopwords, and broad enterprise terms from
+   query topic terms only;
+7. apply a light inflectional stemmer (`-s`/`-es`/`-ies`/`-ed`/`-ing` plus
+   final-e elision, run to an idempotent fixpoint) to both query and section
+   terms — after aliases, so reviewed mappings always win;
+8. calculate smoothed inverse document frequency (IDF) across the 10 sections;
+9. score each distinct query term once, with title matches weighted `1.5` and
+   body-only matches weighted `1.0`;
+10. admit a candidate when it has a title anchor or at least two matched terms;
+11. keep candidates scoring at least `60%` of the best score and at least
+    `1.0`;
+12. for a focused two-term topic, retain a lower-scoring sibling only when it
+    shares a title anchor with a full-coverage candidate;
+13. sort by descending score and then original document order; and
+14. return every section that passes the relevance gate—there is no fixed
+    `TOP_K`.
 
-Recalibrate the semantic threshold only after intentionally changing the
-embedding model, knowledge base, or labeled calibration sets:
+The lexical constants are calibrated against the 27-case **calibration set** in
+`tests/fixtures/retrieval_cases.json` — the numbers on that set are a fit
+statistic, not a generalization estimate. The gate reaches 100% exact match on
+that tuning set while remaining fully deterministic; generalization is measured
+separately on a held-out set (see [Evaluation](#evaluation)):
 
-```bash
-python -m src.evaluation.calibrate_threshold
-```
+| Query | Retrieved sections |
+|---|---|
+| `international travel` | Approval Process, Daily Allowance, Insurance |
+| `How many remote days are allowed?` | Remote Work |
+| `overseas business trip per diem` | Daily Allowance |
+| `annual vacation entitlements` | Annual Leave |
+| `international card fee` | PaySiam Gateway only |
+| `international travel insurance coverage` | Travel Insurance only |
+| `international travel approval, allowance, and insurance requirements` | All three Travel sections |
+| `escalate a P1 outage` | Support Escalation + Customer Support Levels |
+| `Can I work remotely?` | Remote Work + Hybrid Work |
+| `What is the CEO's salary?` | No sections |
 
-Both API-backed commands send the fictional knowledge-base sections and
-evaluation queries to the configured embedding provider. Use them only with
-approved data egress and a project-scoped key.
+### Semantic and hybrid modes
 
-### Opt-in live LLM integration
+Semantic mode embeds the 10 raw sections in one batch, stores only numeric
+vectors in `.cache/embeddings/`, and invalidates that cache when either the
+embedding model or byte-relevant chunk content changes. Cache files are JSON
+(never executable pickle), atomically replaced, permission-restricted, size
+bounded, and validated for count, dimension, finite values, and non-zero
+norms. Every query makes one embedding request and performs an in-memory
+linear cosine scan; there is no vector database, ANN index, reranker, query
+rewrite, or silent fallback.
 
-The live gate verifies authentication, model/tool-call compatibility, the
-actual `ChatOpenAI.bind_tools()` response shape, raw corpus handoff, and the
-real Retriever → Tool → Reporter path:
+`MIN_COSINE=0.392817` comes from the measured precision-weighted F0.5 sweep in
+[threshold_calibration.md](threshold_calibration.md). The positive and
+hard-negative distributions overlap, so no global threshold can provide both
+zero false positives and useful recall: the selected boundary yields 87.5%
+pair precision and 92.1% pair recall on the calibration pairs. The zero-FP
+boundary would reject all 38 measured positive pairs and is therefore
+reported, not deployed.
 
-```bash
-RUN_LIVE_LLM_TESTS=1 \
-LIVE_LLM_TEST_MODEL=gpt-5-mini \
-python -m unittest tests.test_live_e2e -v
-```
+Hybrid mode gates each side before fusion, uses rank-only Reciprocal Rank
+Fusion because lexical and cosine scores have incompatible scales, and
+deduplicates exact raw chunks. It is recall-oriented: measured held-out recall
+is 100%, but it inherits lexical false positives.
 
-`OPENAI_API_KEY` must be present in the environment or `.env`; otherwise the
-opted-in class is skipped with a clear reason. The five tests use only
-fictional knowledge-base questions and make approximately nine provider
-calls:
-
-| Test | Retriever LLM | Reporter LLM | Total |
-|---|---:|---:|---:|
-| Known international-travel query | 1 | 1 | 2 |
-| Unknown CEO-salary query | 1 | 0 | 1 |
-| Thai cross-language query | 1 | 1 | 2 |
-| Multi-intent baseline-coverage query | 1 | 1 | 2 |
-| Streamed CLI byte-equality query | 1 | 1 | 2 |
-
-The known-query assertion checks structural contracts and verifies that every
-returned snippet is byte-for-byte one of the loaded corpus sections. It does
-not assert exact generative wording. The unknown path verifies the exact
-deterministic not-found sentence, the multi-intent case asserts the handoff
-is a superset of the deterministic baseline search, and the CLI case asserts
-the streamed screen text ends byte-equal with the state report.
-
-For a submission or release check, run:
-
-```bash
-python -m compileall -q main.py src tests
-python -m pip check
-python -m unittest discover -v
-python -m src.evaluation.run_retrieval_eval
-git diff --check
-```
-
-Run the live command separately only with an approved project-scoped key,
-provider usage limits, and controlled egress. Do not publish prompts, raw
-responses, environment dumps, authorization headers, or credentials as CI
-artifacts.
+The tool returns source sections as raw text. It never asks an LLM to search,
+summarize, enrich, rerank, or rewrite the evidence.
 
 ## Evaluation
 
@@ -663,16 +712,16 @@ The representative query `นโยบายการเดินทางต่
 in all three raw modes. In a separately verified full-pipeline run, however,
 the existing Retriever Agent translated that query into English, recovered
 all three international-travel sections through the default lexical mode, and
-the Reporter answered in Thai with verbatim English citations. This is a
-measured best-effort agent path, not a claim that direct multilingual retrieval
-is broadly solved.
+the Reporter answered in Thai with verbatim English citations (see
+[Thai query](#thai-query)). This is a measured best-effort agent path, not a
+claim that direct multilingual retrieval is broadly solved.
 
 Lexical retrieval stays below a millisecond. In the recorded live run,
 semantic/hybrid query embedding p50 was roughly 370–580 ms depending on
 mode and dataset; cache state and provider conditions affect latency and
 document-embedding call counts.
 
-### What each design decision buys
+### What each design layer buys
 
 The pipeline is scored with each layer removed, on the held-out set:
 
@@ -698,7 +747,8 @@ two evaluation-only soft metrics. The judged axes use strict JSON Schema
 outputs, application validation, bounded parse retry, and independent
 `judge_error` reporting. The run below used `gpt-5-mini` for both agents and
 the single judge, judge prompt `phase4-v1`, prompt commit `68d0837`, and one
-run per case over all 57 labeled queries.
+run per case over all 57 labeled queries (16 answer cases plus the 41
+calibration and held-out retrieval fixtures).
 
 | axis | method | result | threshold |
 |---|---|---|---|
@@ -717,123 +767,234 @@ Full per-variant tables, per-case mismatches, and run metadata are in
 [evaluation_results.md](evaluation_results.md) and
 [answer_eval_results.md](answer_eval_results.md).
 
-**Evaluation limitations:** all retrieval sets are small (n = 27, 14, 12, and
-13) over a 10-section corpus, so a single case moves a percentage by several
-points. The English and Thai held-out sets are written by the same author as
-the knowledge base. Hard negatives are used for calibration and must not be
-presented as generalization evidence. Hosted embedding scores can vary
-slightly between live runs. The Thai translation sub-query and answer metrics
-come from one run per case of a probabilistic model. The judged axes use the
-same single model for one run with no ensemble or human calibration, so they
-inherit its strictness and must not be treated as deterministic CI gates.
+### Evaluation limitations
 
-## Example results
+All retrieval sets are small (n = 27, 14, 12, and 13) over a 10-section
+corpus, so a single case moves a percentage by several points. The English and
+Thai held-out sets are written by the same author as the knowledge base. Hard
+negatives are used for calibration and must not be presented as generalization
+evidence. Hosted embedding scores can vary slightly between live runs. The
+Thai translation sub-query and answer metrics come from one run per case of a
+probabilistic model. The judged axes use the same single model for one run
+with no ensemble or human calibration, so they inherit its strictness and must
+not be treated as deterministic CI gates.
 
-> **Live E2E verification — 26 July 2026.**
-> `RUN_LIVE_LLM_TESTS=1 .venv/bin/python -m unittest -v tests.test_live_e2e`
-> completed all 5 provider-boundary tests in 88.408 seconds. The run covered a
-> known multi-section query, the multi-intent union guarantee, streamed CLI/state
-> parity, a Thai answer with a byte-verifiable English citation, and the exact
-> deterministic not-found response.
+## Tests
 
-### Command-line interface
+### The offline suite
 
-The screenshots below were regenerated on **26 July 2026** from successful live
-CLI runs with `gpt-5-mini`. They are direct renderings of the CLI's stdout—not
-mock fixtures—and each image shows the user query, the raw evidence handoff,
-retrieval telemetry, and the final grounded answer.
+```bash
+python -m unittest discover -v
+```
 
-Together, the three runs demonstrate the assignment-critical paths: grounded
-multi-section synthesis, complementary related-section synthesis, and a
-knowledge-base gap that returns the exact deterministic fallback instead of
-hallucinating.
+The default run discovers **166 tests**: **161 pass offline** and the **5 live
+tests are skipped**. It covers:
 
-#### International travel — multi-section synthesis
+- knowledge-base loading, section splitting, and parse-cache invalidation;
+- phrase/token normalization, query-framing removal, and the inflectional
+  stemmer (table-driven cases, corpus-wide idempotency, stopword-collision
+  guard);
+- deterministic IDF and weighted title/body scoring;
+- the 27-case calibration set (exact pass, precision/recall, unknown
+  rejection) via the shared evaluation metrics;
+- dataset-loader schema validation and hand-computed metric tests;
+- the ablation ladder's equivalence with production settings;
+- exact two-agent/sequential-graph assignment invariants and the unchanged
+  `query: str -> list[str]` tool contract;
+- per-mode telemetry population, thread isolation, consume-on-read behavior,
+  empty-reason diagnostics, optional graph state, and Reporter prompt
+  isolation;
+- semantic cosine validation, threshold gating, byte-exact raw chunk mapping,
+  missing-credential failure semantics, and document-cache reuse,
+  invalidation, corruption recovery, and file permissions;
+- hybrid gate-first RRF behavior, one-sided results, and exact deduplication;
+- lazy per-mode factory caching and unsupported-mode rejection;
+- hard-negative dataset validation and deterministic threshold-selection
+  tests for both clean-gap and overlapping distributions;
+- Retriever tool-call contract enforcement (1–3 calls, tool name,
+  non-empty sub-queries) and the baseline-union superset guarantee;
+- query validation (empty / whitespace / over-length) with no LLM call;
+- environment parsing (blank values, malformed numbers, range validation) and
+  per-role LLM construction, timeout, and retry wiring;
+- strict structured-output judge schemas, application validation, bounded
+  parse retry, input limits, prompt-injection boundaries, and safe independent
+  `judge_error` handling;
+- citation validation, evidence-block wrapping, and injection-guard prompt
+  structure;
+- malformed knowledge-base rejection;
+- string and structured Report Generator output;
+- raw-snippet handoff through LangGraph and exact two-node topology;
+- deterministic not-found behavior without a Generator LLM call;
+- CLI streaming (screen text byte-equal with the state report), exception
+  chaining, safe error rendering, exit status, and interactive recovery.
 
-The assignment's sample question retrieves Approval Process, Daily Allowance,
-and Insurance sections before producing one cohesive answer.
+The suite uses mocks at the LLM boundary, so it needs no API key and makes no
+network requests. The live tests remain skipped unless explicitly enabled.
 
-![International travel query with three retrieved sections and a grounded answer](screenshots/01_international_travel.png)
+### Evaluation and calibration commands
 
-#### Remote work — related-section synthesis
+Run every production mode when an API key is available:
 
-The system combines Remote Work Policy and Hybrid Work Guidelines without
-duplicating overlapping information.
+```bash
+python -m src.evaluation.run_retrieval_eval
+```
 
-![Remote work query with Remote Work and Hybrid Work evidence](screenshots/02_remote_work.png)
+Force the offline lexical-only evaluation (also usable as a CI gate — it
+exits non-zero if the current lexical variant misses its calibration
+thresholds):
 
-#### Knowledge-base gap — deterministic not-found
+```bash
+OPENAI_API_KEY= python -m src.evaluation.run_retrieval_eval
+```
 
-Executive salary information does not exist in the knowledge base, so the
-system returns the fixed fallback instead of inventing an answer.
+Recalibrate the semantic threshold only after intentionally changing the
+embedding model, knowledge base, or labeled calibration sets:
 
-![CEO salary query returning the deterministic not-found answer](screenshots/03_not_found.png)
+```bash
+python -m src.evaluation.calibrate_threshold
+```
 
-### Web interface
+Both API-backed commands send the fictional knowledge-base sections and
+evaluation queries to the configured embedding provider. Use them only with
+approved data egress and a project-scoped key.
 
-These screenshots were refreshed after the live E2E verification above. They
-come from the bundled UI running on **mock fixtures**, not a live provider call.
-The retrieved sections are byte-identical to `knowledge_base.txt`, and the mock
-gate returns the same sections as the Python tool for the queries in the table
-above.
+### Opt-in live LLM integration
 
-For an AI Engineer Programming Test reviewer, the image sequence is organised
-around inspectability: graph topology before execution, per-stage progress,
-forced tool use, raw evidence handoff, grounded citations, deterministic
-not-found behaviour, explicit backend failures, and responsive operation.
+The live gate verifies authentication, model/tool-call compatibility, the
+actual `ChatOpenAI.bind_tools()` response shape, raw corpus handoff, and the
+real Retriever → Tool → Reporter path:
 
-#### Evaluator orientation — graph visible before execution
+```bash
+RUN_LIVE_LLM_TESTS=1 \
+LIVE_LLM_TEST_MODEL=gpt-5-mini \
+python -m unittest tests.test_live_e2e -v
+```
 
-The first-visit state names both agents and exposes the fixed LangGraph topology
-before a query is submitted.
+`OPENAI_API_KEY` must be present in the environment or `.env`; otherwise the
+opted-in class is skipped with a clear reason. The five tests use only
+fictional knowledge-base questions and make approximately nine provider
+calls:
 
-![Web UI empty state with the two-agent topology visible](screenshots/ui_01_empty.png)
+| Test | Retriever LLM | Reporter LLM | Total |
+|---|---:|---:|---:|
+| Known international-travel query | 1 | 1 | 2 |
+| Unknown CEO-salary query | 1 | 0 | 1 |
+| Thai cross-language query | 1 | 1 | 2 |
+| Multi-intent baseline-coverage query | 1 | 1 | 2 |
+| Streamed CLI byte-equality query | 1 | 1 | 2 |
 
-#### International travel — evidence handoff made visible
+The known-query assertion checks structural contracts and verifies that every
+returned snippet is byte-for-byte one of the loaded corpus sections. It does
+not assert exact generative wording. The unknown path verifies the exact
+deterministic not-found sentence, the multi-intent case asserts the handoff
+is a superset of the deterministic baseline search, and the CLI case asserts
+the streamed screen text ends byte-equal with the state report.
 
-Step 2 shows the forced single tool call and confirms the query reached the tool
-unchanged. Step 3 shows all three sections raw. Step 5 shows the synthesised
-answer with its section citations.
+> **Latest live verification — 26 July 2026.**
+> `RUN_LIVE_LLM_TESTS=1 LIVE_LLM_TEST_MODEL=gpt-5-mini .venv/bin/python -m unittest tests.test_live_e2e -v`
+> passed all 5 provider-boundary tests in 101.992 seconds.
 
-![Web UI with three raw sections and a grounded answer](screenshots/ui_03_international_travel.png)
+### Submission check
 
-#### Not-found guardrail
+For a submission or release check, run:
 
-No section clears the relevance gate, so the evidence panel reports
-*No evidence found* and the Report Generator returns the deterministic sentence
-without an LLM call.
+```bash
+python -m compileall -q main.py src tests
+python -m pip check
+python -m unittest discover -v
+python -m src.evaluation.run_retrieval_eval
+git diff --check
+```
 
-![Web UI showing the not-found state with zero snippets](screenshots/ui_04_not_found.png)
+Run the live command separately only with an approved project-scoped key,
+provider usage limits, and controlled egress. Do not publish prompts, raw
+responses, environment dumps, authorization headers, or credentials as CI
+artifacts.
 
-#### Loading state
+## Technology stack
 
-Each stage reports its own status while the workflow runs, so the sequence
-Retriever → Evidence → Generator → Answer stays visible in flight.
+| Component | Technology | Purpose |
+|---|---|---|
+| Runtime | Python 3.11 | Application and tests |
+| Orchestration | LangGraph | Fixed two-node workflow and shared state |
+| Agent/tool primitives | LangChain Core | Messages, tool schema, and invocation |
+| OpenAI integration | LangChain OpenAI | `ChatOpenAI` agents and `OpenAIEmbeddings` semantic mode |
+| Configuration | python-dotenv | Local environment configuration |
+| Knowledge store | UTF-8 text file | Small, inspectable evidence source |
+| Web UI | HTML, CSS, vanilla JS | Dependency-free stage-by-stage demo front end |
+| Testing | `unittest` | Offline regression and graph tests |
 
-![Web UI running with per-stage status badges and skeletons](screenshots/ui_02_running.png)
+## Project structure
 
-#### Compact audit status
-
-Once the query card scrolls out of view, the sticky bar preserves the run
-outcome, query, and grounding count while evidence and the final answer remain
-under review.
-
-![Web UI compact status bar while reviewing a grounded answer](screenshots/ui_08_compact_bar.png)
-
-#### Backend failure
-
-A failure is not converted into a not-found. The error is surfaced with the
-unfinished stages marked *Failed*, matching the CLI's failure semantics.
-
-![Web UI error state after a backend protocol failure](screenshots/ui_05_error.png)
-
-#### Responsive and dark theme
-
-The same five stages on an exact 390 px viewport and in the dark colour scheme.
-
-| Mobile | Dark |
-|---|---|
-| ![Web UI on a mobile viewport](screenshots/ui_06_mobile_remote_work.png) | ![Web UI in dark theme](screenshots/ui_07_dark.png) |
+```text
+.
+├── main.py                       # CLI: single-query and interactive modes
+├── knowledge_base.txt            # 10-section local knowledge base
+├── requirements.txt              # pinned Python dependencies
+├── .env.example                  # safe configuration template
+├── LICENSE
+├── README.md
+├── screenshots/
+│   ├── 01_international_travel.png       # CLI runs
+│   ├── 02_remote_work.png
+│   ├── 03_not_found.png
+│   └── ui_01_empty.png … ui_08_compact_bar.png  # web UI states
+├── docs/
+│   └── DESIGN_NOTES.md           # engineering rationale and trade-offs
+├── evaluation_results.md         # generated multi-mode retrieval metrics
+├── threshold_calibration.md      # cosine-threshold provenance and trade-offs
+├── answer_eval_results.md        # generated by the opt-in live answer eval
+├── src/
+│   ├── config.py                 # models, retrieval mode, thresholds, paths
+│   ├── graph.py                  # PipelineState and LangGraph wiring
+│   ├── agents/
+│   │   ├── __init__.py           # per-model ChatOpenAI construction
+│   │   ├── retriever.py          # Data Retriever node
+│   │   └── reporter.py           # Report Generator node
+│   ├── evaluation/
+│   │   ├── calibrate_threshold.py # semantic threshold measurement
+│   │   ├── dataset.py            # shared fixture loader
+│   │   ├── metrics.py            # pure set-based retrieval metrics
+│   │   ├── ablation.py           # V0..V5 scoring-layer ladder
+│   │   ├── judges.py             # structured faithfulness/relevance judges
+│   │   ├── judge_reporting.py    # pure judged-metric Markdown rendering
+│   │   ├── run_retrieval_eval.py # lexical + semantic + hybrid evaluation
+│   │   └── run_answer_eval.py    # opt-in live answer eval runner
+│   ├── retrievers/
+│   │   ├── base.py               # Retriever, scored result, telemetry contracts
+│   │   ├── lexical.py            # measured offline implementation
+│   │   ├── semantic.py           # embeddings, cosine, validated disk cache
+│   │   ├── hybrid.py             # gate-first reciprocal-rank fusion
+│   │   └── factory.py            # lazy configuration-owned strategy factory
+│   └── tools/
+│       └── retrieval.py          # thin custom tool + compatibility exports
+├── tests/
+│   ├── fixtures/
+│   │   ├── README.md               # fixture roles and append-only rule
+│   │   ├── retrieval_cases.json    # 27-case calibration set (tuning set)
+│   │   ├── retrieval_heldout.json  # 14-case held-out set (never tuned on)
+│   │   ├── retrieval_negatives.json # 12 intentional hard negatives
+│   │   ├── retrieval_thai.json     # 13-case held-out Thai slice
+│   │   └── answer_cases.json       # answer-quality facts and citations
+│   ├── test_assignment_invariants.py # assignment architecture guards
+│   ├── test_retrievers.py        # semantic, hybrid, cache, and factory tests
+│   ├── test_retrieval.py         # retrieval, stemming, and cache tests
+│   ├── test_evaluation.py        # dataset loader and metric tests
+│   ├── test_answer_judge.py      # offline judge schema/retry/error tests
+│   ├── test_config.py            # environment parsing and validation tests
+│   ├── test_graph.py             # agent behavior and graph handoff
+│   ├── test_live_e2e.py          # opt-in real provider integration
+│   ├── test_telemetry.py         # score/provenance/latency isolation tests
+│   └── test_main.py              # CLI streaming and failure recovery
+└── web/                          # dependency-free single-page UI
+    ├── index.html                # markup for the five pipeline stages
+    ├── styles.css                # layout, badges, light and dark themes
+    ├── tokens.css                # design tokens
+    ├── api.js                    # the only backend seam
+    ├── mock-data.js              # offline fixtures for the demo
+    ├── app.js                    # state and rendering
+    └── README.md                 # run and backend-wiring guide
+```
 
 ## Design decisions
 
@@ -885,7 +1046,11 @@ no-evidence guard and its measurable contract for every language.
 
 **Why raw state handoff.** Keeping source sections unchanged makes it possible
 to compare the Generator's input directly with `knowledge_base.txt`. This
-separates retrieval quality from answer-generation quality.
+separates retrieval quality from answer-generation quality. It is also what
+makes the pipeline auditable in an organizational context: a reviewer can
+reconstruct exactly which policy text produced a given sentence, which is the
+practical difference between a demo and a system that could carry a business
+answer.
 
 **Why the LLM judge is evaluation-only.** Claim-level faithfulness and
 relevance help investigate semantic defects that deterministic matching may
@@ -900,13 +1065,19 @@ hallucination risk, latency, and API cost.
 
 **Why failures are not converted to not-found.** A missing tool call, malformed
 corpus, or empty model response means the pipeline failed; it does not prove
-that the requested information is absent. These errors retain their original
-cause internally, while the CLI emits a concise message without raw queries,
-prompts, snippets, or credentials. Single-query mode exits non-zero, and
-interactive mode continues with the next query.
+that the requested information is absent. Conflating the two would tell a user
+that a policy does not exist when in fact the system broke — the kind of
+silent wrong answer that is hardest to detect in production. These errors
+retain their original cause internally, while the CLI emits a concise message
+without raw queries, prompts, snippets, or credentials. Single-query mode exits
+non-zero, and interactive mode continues with the next query.
 
 **Why pinned dependencies.** Exact versions reduce installation drift in a
 reviewer's Python 3.11 environment.
+
+Further rationale, including the boundary-failure analysis and the measured
+term-frequency experiment that was dropped, is in
+[docs/DESIGN_NOTES.md](docs/DESIGN_NOTES.md).
 
 ## Limitations and production next steps
 
