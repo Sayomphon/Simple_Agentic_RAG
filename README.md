@@ -228,7 +228,6 @@ summarize, enrich, or rank the evidence.
 ├── knowledge_base.txt            # 10-section local knowledge base
 ├── requirements.txt              # pinned Python dependencies
 ├── .env.example                  # safe configuration template
-├── AI Engineer Programming Test.md
 ├── LICENSE
 ├── README.md
 ├── screenshots/

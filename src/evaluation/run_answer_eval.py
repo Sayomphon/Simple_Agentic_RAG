@@ -5,7 +5,8 @@ Usage:
 
 Runs every labeled query (answer cases + both retrieval fixtures)
 through the real graph once and scores the deterministic guardrail and
-answer-quality axes from EVALUATION_PLAN §4.3. The metrics are computed
+answer-quality axes (citations, not-found discipline, provenance,
+baseline coverage, facts, and numbers). The metrics are computed
 deterministically, but the generator output is probabilistic — the
 report header therefore always names the models, prompt version
 (commit), and runs per case. Writes answer_eval_results.md.

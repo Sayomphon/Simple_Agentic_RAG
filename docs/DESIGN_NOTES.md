@@ -136,9 +136,11 @@ Two findings led to dropping it from the default configuration:
 2. At the largest safe constant, V6 equals V5 on every metric — the layer
    buys nothing measurable.
 
-Per the decision rule in IMPROVEMENT_PLAN §4.2, the default is
-`use_tf_saturation=False`, the ablation ladder ends at `V5_current`, and
-the scoring path remains available to evaluations via settings.
+Per the decision rule set before implementation (keep TF only if the
+ablation shows it beats stemming alone on at least one metric), the
+default is `use_tf_saturation=False`, the ablation ladder ends at
+`V5_current`, and the scoring path remains available to evaluations via
+settings.
 
 ## Bounded agent behavior
 

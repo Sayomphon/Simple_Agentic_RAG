@@ -181,7 +181,7 @@ class RetrievalSettings:
     """Feature switches for the scoring pipeline, used by the ablation study.
 
     The defaults reproduce the production pipeline exactly; every eval
-    variant is expressed as a non-default instance. See EVALUATION_PLAN §6.
+    variant is expressed as a non-default instance (src/evaluation/ablation.py).
     """
 
     use_query_filters: bool = True

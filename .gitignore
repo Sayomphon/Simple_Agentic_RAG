@@ -24,3 +24,8 @@ dist/
 .DS_Store
 .vscode/
 .idea/
+
+# Local planning documents (kept out of the published repo)
+AI Engineer Programming Test.md
+EVALUATION_PLAN.md
+IMPROVEMENT_PLAN.md
