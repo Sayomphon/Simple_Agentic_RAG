@@ -540,7 +540,7 @@ configuration. The measurement and reasoning are recorded in
 
 All axes are scored by deterministic matching — no LLM judge, no reference
 answers. The generator output itself is probabilistic: results below were
-produced with `gpt-5-mini` for both agents, prompt version `bde0110`
+produced with `gpt-5-mini` for both agents, prompt version `a40dfbd`
 (commit), and 1 run per case over all 53 labeled queries.
 
 | axis | result | threshold |
@@ -551,7 +551,7 @@ produced with `gpt-5-mini` for both agents, prompt version `bde0110`
 | no LLM call on empty retrieval | 100.0% (7/7) | 100% |
 | baseline coverage | 100.0% (53/53) | 100% |
 | required-fact coverage | 100.0% (14/14) | 100% |
-| unsupported-number rate | 0.0% (0/21) | 0% |
+| unsupported-number rate | 0.0% (0/22) | 0% |
 | forbidden-fact violations | 0 | 0 |
 
 Full per-variant tables, per-case mismatches, and run metadata are in

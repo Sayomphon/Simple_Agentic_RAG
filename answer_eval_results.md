@@ -6,7 +6,7 @@ Metrics are computed by deterministic matching, but the generator output itself 
 
 - Retriever model: `gpt-5-mini`
 - Reporter model: `gpt-5-mini`
-- Prompt version (commit): `bde0110`
+- Prompt version (commit): `a40dfbd`
 - Runs per case: 1
 - Queries executed: 53/53 (12 answer cases, 41 retrieval-fixture cases; errors: 0)
 
@@ -18,7 +18,7 @@ Metrics are computed by deterministic matching, but the generator output itself 
 | no_llm_on_empty | 100.0% (7/7) | 100% |
 | baseline_coverage | 100.0% (53/53) | 100% |
 | required_fact_coverage | 100.0% (14/14) | 100% |
-| unsupported_number_rate | 0.0% (0/21) | 0% |
+| unsupported_number_rate | 0.0% (0/22) | 0% |
 | forbidden_fact_violations | 0 | 0 |
 
 Every case passed every axis.
