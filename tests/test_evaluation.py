@@ -58,14 +58,34 @@ class DatasetLoaderTests(unittest.TestCase):
             all(case.category != "heldout" for case in cases)
         )
 
+    def test_thai_slice_is_frozen_and_contains_answerable_and_negative_cases(
+        self,
+    ) -> None:
+        cases = load_cases("thai")
+        answerable = [case for case in cases if not case.is_negative]
+        negatives = [case for case in cases if case.is_negative]
+
+        self.assertGreaterEqual(len(answerable), 8)
+        self.assertGreaterEqual(len(negatives), 2)
+        self.assertEqual(len({case.id for case in cases}), len(cases))
+        self.assertTrue(
+            all(
+                any("\u0e00" <= character <= "\u0e7f" for character in case.query)
+                for case in cases
+            )
+        )
+
     def test_unknown_dataset_name_is_rejected(self) -> None:
         with self.assertRaisesRegex(DatasetValidationError, "Unknown dataset"):
             load_cases("production")
 
-    def test_load_all_includes_calibration(self) -> None:
+    def test_load_all_includes_registered_datasets(self) -> None:
         datasets = load_all()
 
-        self.assertIn("calibration", datasets)
+        self.assertEqual(
+            set(datasets),
+            {"calibration", "heldout", "negatives", "thai"},
+        )
         self.assertEqual(
             [case.id for case in datasets["calibration"]],
             [case.id for case in load_cases("calibration")],

@@ -104,5 +104,37 @@
     "allowed_citations": [],
     "forbidden_facts": [],
     "expect_not_found": true
+  },
+  {
+    "id": "ans_th_travel_approval_system",
+    "query": "การขออนุมัติเดินทางไปต่างประเทศต้องยื่นผ่านระบบอะไร",
+    "required_facts": ["TravelHub"],
+    "allowed_citations": ["International Travel Approval Process"],
+    "forbidden_facts": ["LeaveDesk"],
+    "expect_not_found": false
+  },
+  {
+    "id": "ans_th_daily_allowance",
+    "query": "เบี้ยเลี้ยงเดินทางไปต่างประเทศเต็มวันและวันเดินทางได้เท่าไหร่",
+    "required_facts": ["2,400 THB", "1,200 THB"],
+    "allowed_citations": ["International Travel Daily Allowance"],
+    "forbidden_facts": ["3,000,000 THB"],
+    "expect_not_found": false
+  },
+  {
+    "id": "ans_th_paysiam_international_fee",
+    "query": "ค่าธรรมเนียมบัตรต่างประเทศของ PaySiam เท่าไหร่",
+    "required_facts": ["2.95%"],
+    "allowed_citations": ["PaySiam Gateway Product Overview"],
+    "forbidden_facts": ["2,400 THB"],
+    "expect_not_found": false
+  },
+  {
+    "id": "ans_th_nf_maternity_leave",
+    "query": "พนักงานมีสิทธิลาคลอดได้กี่วัน",
+    "required_facts": [],
+    "allowed_citations": [],
+    "forbidden_facts": [],
+    "expect_not_found": true
   }
 ]

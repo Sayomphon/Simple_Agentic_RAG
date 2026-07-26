@@ -312,7 +312,10 @@ def main() -> int:
                         file=sys.stderr,
                     )
 
-    RESULTS_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    RESULTS_PATH.write_text(
+        "\n".join(lines).rstrip() + "\n",
+        encoding="utf-8",
+    )
     print(f"Wrote {RESULTS_PATH}")
     return 1 if gate_failed else 0
 

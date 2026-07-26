@@ -16,6 +16,7 @@ DATASET_FILES: dict[str, str] = {
     "calibration": "retrieval_cases.json",
     "heldout": "retrieval_heldout.json",
     "negatives": "retrieval_negatives.json",
+    "thai": "retrieval_thai.json",
 }
 
 

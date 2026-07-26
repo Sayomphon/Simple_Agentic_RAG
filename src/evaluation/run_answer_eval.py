@@ -291,7 +291,10 @@ def main() -> int:
     else:
         lines += ["Every case passed every axis.", ""]
 
-    RESULTS_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    RESULTS_PATH.write_text(
+        "\n".join(lines).rstrip() + "\n",
+        encoding="utf-8",
+    )
     print(f"Wrote {RESULTS_PATH}")
     return 0
 

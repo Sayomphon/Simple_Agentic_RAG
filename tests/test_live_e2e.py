@@ -89,6 +89,30 @@ class LiveLLMEndToEndTests(unittest.TestCase):
         self.assertEqual(result["snippets"], [])
         self.assertEqual(result["report"], NOT_FOUND_SENTENCE)
 
+    def test_thai_query_returns_thai_answer_with_english_citation(self) -> None:
+        result = self._invoke(
+            {
+                "query": (
+                    "ค่าธรรมเนียมบัตร"
+                    "ต่างประเทศของ "
+                    "PaySiam เท่าไหร่"
+                ),
+                "snippets": [],
+                "report": "",
+            }
+        )
+
+        self.assertTrue(
+            any(
+                "\u0e00" <= character <= "\u0e7f"
+                for character in str(result["report"])
+            )
+        )
+        self.assertIn(
+            "[PaySiam Gateway Product Overview]",
+            result["report"],
+        )
+
     def test_multi_intent_query_covers_the_deterministic_baseline(self) -> None:
         query = (
             "Can I get reimbursed for flights and how do I escalate a P1?"

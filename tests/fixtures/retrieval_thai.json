@@ -1,0 +1,134 @@
+[
+  {
+    "id": "th_remote_manager_approval",
+    "category": "thai_answerable",
+    "query": "การทำงานจากบ้านต้องได้รับอนุมัติจากใคร",
+    "expected_titles": [
+      "--- Remote Work Policy ---"
+    ],
+    "forbidden_titles": [
+      "--- Hybrid Work Guidelines ---"
+    ]
+  },
+  {
+    "id": "th_remote_days_per_week",
+    "category": "thai_answerable",
+    "query": "พนักงานทำงานจากบ้านได้กี่วันต่อสัปดาห์",
+    "expected_titles": [
+      "--- Remote Work Policy ---"
+    ],
+    "forbidden_titles": [
+      "--- Hybrid Work Guidelines ---"
+    ]
+  },
+  {
+    "id": "th_company_anchor_day",
+    "category": "thai_answerable",
+    "query": "วันไหนเป็นวันที่พนักงานทุกคนต้องเข้าออฟฟิศ",
+    "expected_titles": [
+      "--- Hybrid Work Guidelines ---"
+    ],
+    "forbidden_titles": [
+      "--- Remote Work Policy ---"
+    ]
+  },
+  {
+    "id": "th_annual_leave_entitlement",
+    "category": "thai_answerable",
+    "query": "พนักงานประจำมีสิทธิลาพักร้อนได้กี่วันต่อปี",
+    "expected_titles": [
+      "--- Annual Leave ---"
+    ],
+    "forbidden_titles": []
+  },
+  {
+    "id": "th_annual_leave_advance_notice",
+    "category": "thai_answerable",
+    "query": "ถ้าจะลาพักร้อนต้องยื่นคำขอล่วงหน้ากี่วัน",
+    "expected_titles": [
+      "--- Annual Leave ---"
+    ],
+    "forbidden_titles": []
+  },
+  {
+    "id": "th_international_travel_approver",
+    "category": "thai_answerable",
+    "query": "การเดินทางไปต่างประเทศเพื่อธุรกิจต้องขออนุมัติจากใคร",
+    "expected_titles": [
+      "--- International Travel Approval Process ---"
+    ],
+    "forbidden_titles": [
+      "--- Expense Reimbursement ---"
+    ]
+  },
+  {
+    "id": "th_international_daily_allowance",
+    "category": "thai_answerable",
+    "query": "เบี้ยเลี้ยงเดินทางไปต่างประเทศได้วันละเท่าไหร่",
+    "expected_titles": [
+      "--- International Travel Daily Allowance ---"
+    ],
+    "forbidden_titles": [
+      "--- International Travel Insurance ---"
+    ]
+  },
+  {
+    "id": "th_business_expense_deadline",
+    "category": "thai_answerable",
+    "query": "ต้องส่งใบเบิกค่าใช้จ่ายทางธุรกิจทั่วไปภายในกี่วัน",
+    "expected_titles": [
+      "--- Expense Reimbursement ---"
+    ],
+    "forbidden_titles": [
+      "--- International Travel Daily Allowance ---"
+    ]
+  },
+  {
+    "id": "th_travel_medical_coverage",
+    "category": "thai_answerable",
+    "query": "ประกันเดินทางไปต่างประเทศคุ้มครองค่ารักษาพยาบาลเท่าไหร่",
+    "expected_titles": [
+      "--- International Travel Insurance ---"
+    ],
+    "forbidden_titles": [
+      "--- International Travel Daily Allowance ---"
+    ]
+  },
+  {
+    "id": "th_paysiam_international_card_fee",
+    "category": "thai_answerable",
+    "query": "ค่าธรรมเนียมบัตรต่างประเทศของ PaySiam เท่าไหร่",
+    "expected_titles": [
+      "--- PaySiam Gateway Product Overview ---"
+    ],
+    "forbidden_titles": [
+      "--- International Travel Approval Process ---",
+      "--- International Travel Daily Allowance ---"
+    ]
+  },
+  {
+    "id": "th_negative_ceo_salary",
+    "category": "thai_negative",
+    "query": "เงินเดือนประจำปีของ CEO เท่าไหร่",
+    "expected_titles": [],
+    "forbidden_titles": []
+  },
+  {
+    "id": "th_negative_maternity_leave",
+    "category": "thai_negative",
+    "query": "พนักงานมีสิทธิลาคลอดได้กี่วัน",
+    "expected_titles": [],
+    "forbidden_titles": [
+      "--- Annual Leave ---"
+    ]
+  },
+  {
+    "id": "th_negative_vpn_password_reset",
+    "category": "thai_negative",
+    "query": "ต้องรีเซ็ตรหัสผ่าน TigerLink VPN อย่างไร",
+    "expected_titles": [],
+    "forbidden_titles": [
+      "--- Remote Work Policy ---"
+    ]
+  }
+]

@@ -41,11 +41,17 @@ Rules:
 - Use only facts stated in the supplied snippets.
 - Never add outside knowledge, assumptions, or invented details.
 - Combine complementary facts and state duplicate facts only once.
-- Each snippet starts with `--- Section Title ---`. When useful, cite that
-  exact title as `[Section Title]`; never invent a source name.
+- Write the answer in the same language as the user's query.
+- Keep numbers, currency codes, proper nouns, product names, and system names
+  verbatim as written in the evidence; translate only the surrounding prose.
+- Each snippet starts with `--- Section Title ---`. Keep every citation
+  verbatim in English exactly as it appears in the evidence, formatted as
+  `[Section Title]`; never translate or invent a source name.
 - If the snippets do not contain the information needed to answer any
   part of the query, reply with exactly this sentence and nothing else —
   no citation: "{NOT_FOUND_SENTENCE}"
+- The fixed not-found sentence above is the only language exception and must
+  remain byte-exact in English for every query language.
 - If the query asks several things and the snippets answer only some of
   them, answer the supported parts normally and state plainly which part
   the knowledge base does not cover. Use the exact not-found sentence

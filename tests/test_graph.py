@@ -12,11 +12,13 @@ from langchain_core.messages import AIMessage
 from src.agents import get_llm
 from src.agents.reporter import (
     NOT_FOUND_SENTENCE,
+    REPORTER_SYSTEM_PROMPT,
     ReportGenerationError,
     generator_node,
 )
 from src.agents.retriever import (
     MAX_QUERY_CHARS,
+    RETRIEVER_SYSTEM_PROMPT,
     InvalidQueryError,
     RetrievalProtocolError,
     retriever_node,
@@ -193,6 +195,57 @@ class AgentAndGraphTests(unittest.TestCase):
 
     @patch("src.agents.retriever.search_knowledge_base")
     @patch("src.agents.retriever.get_llm")
+    def test_thai_translation_sub_query_extends_the_original_baseline(
+        self,
+        mock_get_llm: Mock,
+        mock_tool: Mock,
+    ) -> None:
+        self._configure_tool(mock_tool)
+        thai_query = (
+            "ค่าธรรมเนียมบัตร"
+            "ต่างประเทศของ "
+            "PaySiam เท่าไหร่"
+        )
+        english_query = "What is PaySiam's international card fee?"
+        expected = [
+            "--- PaySiam Gateway Product Overview ---\nRaw evidence."
+        ]
+        bound_llm = Mock()
+        bound_llm.invoke.return_value = SimpleNamespace(
+            tool_calls=[
+                {
+                    "name": "search_knowledge_base",
+                    "args": {"query": english_query},
+                }
+            ]
+        )
+        mock_get_llm.return_value.bind_tools.return_value = bound_llm
+        mock_tool.invoke.side_effect = (
+            lambda args: [] if args["query"] == thai_query else expected
+        )
+
+        result = retriever_node(self._state(thai_query))
+
+        self.assertEqual(result, {"snippets": expected})
+        self.assertEqual(
+            mock_tool.invoke.call_args_list,
+            [
+                call({"query": thai_query}),
+                call({"query": english_query}),
+            ],
+        )
+
+    def test_retriever_prompt_requires_english_cross_language_sub_queries(
+        self,
+    ) -> None:
+        normalized_prompt = " ".join(RETRIEVER_SYSTEM_PROMPT.split())
+
+        self.assertIn("not in English", normalized_prompt)
+        self.assertIn("English translation", normalized_prompt)
+        self.assertIn("knowledge base is written in English", normalized_prompt)
+
+    @patch("src.agents.retriever.search_knowledge_base")
+    @patch("src.agents.retriever.get_llm")
     def test_multi_intent_calls_union_in_order_with_dedup(
         self,
         mock_get_llm: Mock,
@@ -283,6 +336,49 @@ class AgentAndGraphTests(unittest.TestCase):
         )
 
         self.assertEqual(result, {"report": "Grounded answer."})
+
+    @patch("src.agents.reporter.get_llm")
+    def test_generator_accepts_thai_answer_with_verbatim_english_citation(
+        self,
+        mock_get_llm: Mock,
+    ) -> None:
+        mock_get_llm.return_value.invoke.return_value = AIMessage(
+            content=(
+                "ค่าธรรมเนียมบัตร"
+                "ต่างประเทศคือ "
+                "2.95% "
+                "[PaySiam Gateway Product Overview]"
+            )
+        )
+
+        result = generator_node(
+            {
+                "query": (
+                    "ค่าธรรมเนียมบัตร"
+                    "ต่างประเทศของ "
+                    "PaySiam เท่าไหร่"
+                ),
+                "snippets": [
+                    "--- PaySiam Gateway Product Overview ---\n"
+                    "International card pricing is 2.95%."
+                ],
+                "report": "",
+            }
+        )
+
+        self.assertIn("ค่าธรรมเนียม", result["report"])
+        self.assertIn("[PaySiam Gateway Product Overview]", result["report"])
+
+    def test_reporter_prompt_preserves_query_language_and_citation_titles(
+        self,
+    ) -> None:
+        normalized_prompt = " ".join(REPORTER_SYSTEM_PROMPT.split())
+
+        self.assertIn("same language as the user's query", normalized_prompt)
+        self.assertIn("currency codes", normalized_prompt)
+        self.assertIn("proper nouns", normalized_prompt)
+        self.assertIn("verbatim in English", normalized_prompt)
+        self.assertIn(NOT_FOUND_SENTENCE, REPORTER_SYSTEM_PROMPT)
 
     @patch("src.agents.reporter.get_llm")
     def test_generator_extracts_structured_text_content(
