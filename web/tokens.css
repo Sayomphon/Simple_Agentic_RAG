@@ -56,8 +56,8 @@
   --neutral-200: #E4E7EC;  /* light: hairline border */
   --neutral-300: #D2D6DE;  /* light: pending border */
   --neutral-400: #A8B0BF;  /* dark: secondary text */
-  --neutral-500: #848FA3;  /* light: strong border · dark: tertiary text */
-  --neutral-600: #5F6A7D;  /* light: tertiary text · dark: strong border */
+  --neutral-500: #848FA3;  /* dark: tertiary text */
+  --neutral-600: #5F6A7D;  /* light: tertiary text */
   --neutral-700: #525C6E;  /* light: secondary text */
   --neutral-800: #2A303C;  /* dark: hairline border */
   --neutral-850: #1D222B;  /* dark: nested surface, pending-bg */
@@ -74,9 +74,9 @@
   --color-surface-2: light-dark(var(--neutral-100), var(--neutral-850)); /* nested: timeline rows, code wells */
 
   /* --- Text (on surface) ------------------------------------------------ */
-  /* text-primary   L 17.35:1 · D 14.74:1  (vs surface; ≥13.48:1 on every surface) */
-  /* text-secondary L  6.74:1 · D  8.04:1 */
-  /* text-tertiary  L  5.46:1 · D  5.65:1  — smallest text still AA body */
+  /* text-primary   L 17.44:1 · D 14.74:1  (vs surface; ≥13.48:1 on every surface) */
+  /* text-secondary L  6.74:1 · D  8.00:1 */
+  /* text-tertiary  L  5.46:1 · D  5.35:1  — smallest text still AA body */
   --color-text-primary:   light-dark(var(--neutral-900), #E9ECF2);
   --color-text-secondary: light-dark(var(--neutral-700), var(--neutral-400));
   --color-text-tertiary:  light-dark(var(--neutral-600), var(--neutral-500));
@@ -85,14 +85,17 @@
   /* border-subtle: decorative card hairline — intentionally below 3:1; never
      the sole affordance for an interactive element. */
   --color-border-subtle: light-dark(var(--neutral-200), var(--neutral-800));
-  /* border-strong: interactive/input borders — L 3.26:1 · D 3.20:1 vs surface (≥3:1 non-text) */
-  --color-border-strong: light-dark(var(--neutral-500), var(--neutral-600));
+  /* border-strong: interactive/input borders — ≥3:1 non-text on EVERY surface
+     it can sit on: vs surface L 3.53:1 · D 3.48:1, vs surface-2 L 3.17:1 ·
+     D 3.18:1. Off-ramp values (between neutral 500 and 600): the nearest ramp
+     stops measure 2.9x:1 on surface-2, so these are dedicated hexes. */
+  --color-border-strong: light-dark(#7E899D, #637085);
 
   /* --- Interactive accent (solid) ---------------------------------------- */
   /* on-accent text: L 5.21:1 · D 5.99:1 (≥4.5:1) — primary button */
   --color-accent-solid:    light-dark(#3D63DD, #5B8CFF);
   --color-on-accent-solid: light-dark(#FFFFFF, #0B1020);
-  /* focus ring vs surface: L 5.21:1 · D 4.44:1 (≥3:1 non-text) */
+  /* focus ring vs surface: L 5.21:1 · D 5.52:1 (≥3:1 non-text) */
   --color-focus-ring:      var(--color-accent-solid);
 
   /* --------------------------------------------------------------------------
@@ -108,7 +111,9 @@
        (interactive/brand)          → accent   (blue — buttons, links, focus)
 
      Measured ratios per token: fg-on-bg ≥4.5:1 · icon-on-bg ≥3:1 · fg is also
-     AA as tinted text directly on --color-surface.
+     AA as tinted text directly on --color-surface. Status *borders* are
+     decorative (~1.5–1.9:1 vs surface): the pill is identified by its tinted
+     bg + AA fg text, never by the border alone.
      ----------------------------------------------------------------------- */
 
   /* success — Completed · fg/bg L 5.81 D 9.52 · icon/bg L 4.75 D 6.54 · fg/surface L 6.57 D 10.88 */
@@ -123,7 +128,7 @@
   --color-running-fg:     light-dark(#3743C0, #ADB9F9);
   --color-running-icon:   light-dark(#4A56D6, #8290F2);
 
-  /* pending — Waiting · fg/bg L 6.06 D 7.35 · icon/bg L 4.91 D 4.66 · fg/surface L 6.74 D 8.04 */
+  /* pending — Waiting · fg/bg L 6.06 D 7.32 · icon/bg L 4.91 D 4.89 · fg/surface L 6.74 D 8.00 */
   --color-pending-bg:     light-dark(var(--neutral-100), var(--neutral-850));
   --color-pending-border: light-dark(var(--neutral-300), #3A414F);
   --color-pending-fg:     light-dark(var(--neutral-700), var(--neutral-400));
