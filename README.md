@@ -7,7 +7,7 @@
 
 ![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/Orchestration-LangGraph-1C3C3C)
-![Tests](https://img.shields.io/badge/tests-122%20passing%20%7C%204%20live%20skipped-brightgreen)
+![Tests](https://img.shields.io/badge/tests-128%20passing%20%7C%205%20live%20skipped-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 This repository is a deliberately small implementation of the
@@ -42,6 +42,9 @@ audit.
 - **Measured retrieval modes:** offline lexical search is the deterministic
   default; opt-in semantic and hybrid modes use cached OpenAI embeddings
   behind the same tool contract.
+- **Measured Thai path:** Thai questions over the English knowledge base use
+  an English retrieval sub-query, while final answers remain Thai and
+  citation titles remain byte-verifiable English.
 - **Raw evidence handoff:** the Retriever does not summarize or rewrite the
   sections it returns; a mixed question may be split into up to three
   sub-queries, but the handoff always contains at least everything a single
@@ -114,8 +117,9 @@ class PipelineState(TypedDict):
 - binds only the `search_knowledge_base` tool;
 - uses `tool_choice="required"` so the model must request a tool call;
 - validates the model's plan: between 1 and 3 correctly named tool calls,
-  each with a non-empty string query — a single-topic question stays one
-  call with the original query, a mixed question may split into focused
+  each with a non-empty string query — a single-topic English question stays
+  one call with the original query, a non-English question uses a faithful
+  English translation, and a mixed question may split into focused English
   sub-queries;
 - executes every search itself: the original graph-state query always runs
   first as a deterministic baseline, then each sub-query's new sections are
@@ -133,6 +137,8 @@ class PipelineState(TypedDict):
   data, never instructions (knowledge-base text is untrusted);
 - combines complementary facts and removes repetition;
 - is instructed not to add outside knowledge or assumptions;
+- answers in the user's language while preserving evidence numbers, currency
+  codes, names, product/system names, and English citation titles verbatim;
 - answers the supported parts of a mixed question and states plainly which
   part the knowledge base does not cover;
 - has every `[Section Title]` citation checked in code against the
@@ -300,6 +306,7 @@ summarize, enrich, rerank, or rewrite the evidence.
 │   │   ├── retrieval_cases.json    # 27-case calibration set (tuning set)
 │   │   ├── retrieval_heldout.json  # 14-case held-out set (never tuned on)
 │   │   ├── retrieval_negatives.json # 12 intentional hard negatives
+│   │   ├── retrieval_thai.json     # 13-case held-out Thai slice
 │   │   └── answer_cases.json       # answer-quality facts and citations
 │   ├── test_assignment_invariants.py # assignment architecture guards
 │   ├── test_retrievers.py        # semantic, hybrid, cache, and factory tests
@@ -411,6 +418,7 @@ Suggested queries:
 What is the policy on international travel?
 Can I work remotely?
 What is the CEO's salary?
+นโยบายการเดินทางต่างประเทศคืออะไร
 ```
 
 - The international-travel query retrieves three complementary sections.
@@ -571,7 +579,7 @@ RUN_LIVE_LLM_TESTS=1 python -m src.evaluation.run_answer_eval
 
 ### Datasets
 
-Three labeled retrieval sets plus one answer-quality set, all in
+Four labeled retrieval sets plus one answer-quality set, all in
 `tests/fixtures/`:
 
 | Set | n | Purpose |
@@ -579,7 +587,8 @@ Three labeled retrieval sets plus one answer-quality set, all in
 | calibration | 27 | The set every scoring constant was tuned against (including the stemmer rules and the added `morphology` cases). Numbers here are a fit statistic, not a generalization estimate. |
 | held-out | 14 | Written from `knowledge_base.txt` alone after the retrieval implementation was frozen, committed before the evaluator ever ran against it, and never edited to flatter a result. |
 | hard negatives | 12 | Intentional near-misses used to calibrate semantic threshold discipline. This is a calibration set, not held-out evidence. |
-| answer cases | 12 | Required/forbidden facts and allowed citations per query, written from the knowledge base and committed before the first answer-eval run. |
+| Thai held-out | 13 | Ten natural Thai questions answerable from the English knowledge base plus three Thai negatives, frozen before its first retrieval run and never used to tune thresholds or labels. |
+| answer cases | 16 | Required/forbidden facts and allowed citations per query, including three Thai answerable cases and one Thai negative. |
 
 Because the retriever returns a threshold-gated set rather than a fixed-size
 ranking (there is no `TOP_K`), retrieval is scored with set-based metrics.
@@ -600,6 +609,9 @@ false-positive rate.
 | hard negatives (12) | lexical | 8.3% | n/a | n/a | n/a | n/a | 91.7% |
 | hard negatives (12) | semantic | 58.3% | n/a | n/a | n/a | n/a | 41.7% |
 | hard negatives (12) | hybrid | 8.3% | n/a | n/a | n/a | n/a | 91.7% |
+| Thai held-out (13) | lexical | 23.1% | 10.0% | 10.0% | 0.100 | 0.100 | 33.3% |
+| Thai held-out (13) | semantic | 30.8% | 10.0% | 10.0% | 0.100 | 0.100 | 0.0% |
+| Thai held-out (13) | hybrid | 30.8% | 20.0% | 20.0% | 0.200 | 0.200 | 33.3% |
 
 These modes optimize different outcomes. Lexical remains the strongest exact
 fit on its calibration set and the only offline path. Semantic raises held-out
@@ -609,8 +621,20 @@ match. Hybrid reaches 100% held-out recall but inherits lexical false
 positives because RRF can reorder admitted candidates, not remove a candidate
 that already passed either source gate.
 
+The Thai table measures each raw retrieval strategy directly, without the
+Data Retriever Agent's translation sub-query. Direct cross-language retrieval
+is weak at the existing threshold: semantic admits one of ten answerable
+questions and hybrid admits two, while semantic rejects all three negatives.
+The representative query `นโยบายการเดินทางต่างประเทศคืออะไร` returned `[]`
+in all three raw modes. In a separately verified full-pipeline run, however,
+the existing Retriever Agent translated that query into English, recovered
+all three international-travel sections through the default lexical mode, and
+the Reporter answered in Thai with verbatim English citations. This is a
+measured best-effort agent path, not a claim that direct multilingual retrieval
+is broadly solved.
+
 Lexical retrieval stays below a millisecond. In the recorded live run,
-semantic/hybrid query embedding p50 was roughly 470–560 ms depending on
+semantic/hybrid query embedding p50 was roughly 370–580 ms depending on
 mode and dataset; cache state and provider conditions affect latency and
 document-embedding call counts.
 
@@ -637,32 +661,32 @@ configuration. The measurement and reasoning are recorded in
 
 All axes are scored by deterministic matching — no LLM judge, no reference
 answers. The generator output itself is probabilistic: results below were
-produced with `gpt-5-mini` for both agents, prompt version `a40dfbd`
-(commit), and 1 run per case over all 53 labeled queries.
+produced with `gpt-5-mini` for both agents, prompt version `b1f51dc`
+(commit), and 1 run per case over all 57 labeled queries.
 
 | axis | result | threshold |
 |---|---|---|
-| citation validity (runtime-enforced) | 100.0% (53/53) | 100% |
-| not-found discipline | 100.0% (9/9) | 100% |
-| evidence provenance | 100.0% (53/53) | 100% |
+| citation validity (runtime-enforced) | 100.0% (57/57) | 100% |
+| not-found discipline | 100.0% (10/10) | 100% |
+| evidence provenance | 100.0% (57/57) | 100% |
 | no LLM call on empty retrieval | 100.0% (7/7) | 100% |
-| baseline coverage | 100.0% (53/53) | 100% |
-| required-fact coverage | 100.0% (14/14) | 100% |
-| unsupported-number rate | 0.0% (0/22) | 0% |
+| baseline coverage | 100.0% (57/57) | 100% |
+| required-fact coverage | 100.0% (18/18) | 100% |
+| unsupported-number rate | 0.0% (0/31) | 0% |
 | forbidden-fact violations | 0 | 0 |
 
 Full per-variant tables, per-case mismatches, and run metadata are in
 [evaluation_results.md](evaluation_results.md) and
 [answer_eval_results.md](answer_eval_results.md).
 
-**Evaluation limitations:** all retrieval sets are small (n = 27, 14, and
-12) over a 10-section corpus, so a single case moves a percentage by several
-points. The held-out set is written by the same author as the knowledge base.
-Hard negatives are used for calibration and must not be presented as
-generalization evidence. Hosted embedding scores can vary slightly between
-runs. Answer metrics come from one run per case of a probabilistic model. No
-LLM-as-judge axis is reported — semantic faithfulness beyond citation
-validity is not measured.
+**Evaluation limitations:** all retrieval sets are small (n = 27, 14, 12, and
+13) over a 10-section corpus, so a single case moves a percentage by several
+points. The English and Thai held-out sets are written by the same author as
+the knowledge base. Hard negatives are used for calibration and must not be
+presented as generalization evidence. Hosted embedding scores can vary
+slightly between live runs. The Thai translation sub-query and answer metrics
+come from one run per case of a probabilistic model. No LLM-as-judge axis is
+reported — semantic faithfulness beyond citation validity is not measured.
 
 ## Example results
 
@@ -776,6 +800,16 @@ scores; it maximizes recall but cannot undo false positives admitted by
 either side. Keeping lexical as the offline default makes those trade-offs
 explicit instead of silently changing runtime behavior.
 
+**Why Thai uses the existing two agents.** The original Thai query still runs
+through the configured retriever as the deterministic baseline. The same Data
+Retriever Agent then requests a faithful English translation sub-query because
+the source document is English; no translator node, query-rewriter agent, or
+conditional graph edge is added. The Report Generator writes the surrounding
+prose in the user's language but preserves evidence numbers, currency codes,
+names, and English citations. The fixed English not-found sentence is the
+intentional exception: keeping it byte-exact preserves the deterministic
+no-evidence guard and its measurable contract for every language.
+
 **Why raw state handoff.** Keeping source sections unchanged makes it possible
 to compare the Generator's input directly with `knowledge_base.txt`. This
 separates retrieval quality from answer-generation quality.
@@ -815,9 +849,13 @@ not production scale.
   F0.5 boundary deliberately accepts five difficult near-misses. Domain or
   metadata constraints would be required to separate cases such as domestic
   versus international travel.
-- **English lexical terms:** lexical mode requires specific English terms
-  present in the knowledge base, its reviewed alias vocabulary, or a
-  stemmable inflection. Cross-language behavior is not measured yet.
+- **Thai retrieval remains best-effort:** the 13-case Thai slice has only
+  10.0% direct semantic recall and 20.0% hybrid recall at the threshold
+  calibrated before the slice was measured. The LLM-generated English
+  sub-query recovers verified examples through the full pipeline, but it is
+  probabilistic, adds a model call, and may translate ambiguously. Lowering
+  `MIN_COSINE` to flatter the Thai slice was deliberately rejected because it
+  would weaken the measured hard-negative discipline.
 - **Heuristic relevance gate:** the `1.5` title weight and `0.60` relative
   cutoff pass the 27-case calibration set but require recalibration against
   representative production traffic.

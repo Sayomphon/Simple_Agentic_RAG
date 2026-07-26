@@ -6,20 +6,19 @@ Metrics are computed by deterministic matching, but the generator output itself 
 
 - Retriever model: `gpt-5-mini`
 - Reporter model: `gpt-5-mini`
-- Prompt version (commit): `a40dfbd`
+- Prompt version (commit): `b1f51dc`
 - Runs per case: 1
-- Queries executed: 53/53 (12 answer cases, 41 retrieval-fixture cases; errors: 0)
+- Queries executed: 57/57 (16 answer cases, 41 retrieval-fixture cases; errors: 0)
 
 | axis | result | threshold |
 |---|---|---|
-| citation_validity (runtime-enforced) | 100.0% (53/53) | 100% |
-| not_found_discipline | 100.0% (9/9) | 100% |
-| evidence_provenance | 100.0% (53/53) | 100% |
+| citation_validity (runtime-enforced) | 100.0% (57/57) | 100% |
+| not_found_discipline | 100.0% (10/10) | 100% |
+| evidence_provenance | 100.0% (57/57) | 100% |
 | no_llm_on_empty | 100.0% (7/7) | 100% |
-| baseline_coverage | 100.0% (53/53) | 100% |
-| required_fact_coverage | 100.0% (14/14) | 100% |
-| unsupported_number_rate | 0.0% (0/22) | 0% |
+| baseline_coverage | 100.0% (57/57) | 100% |
+| required_fact_coverage | 100.0% (18/18) | 100% |
+| unsupported_number_rate | 0.0% (0/31) | 0% |
 | forbidden_fact_violations | 0 | 0 |
 
 Every case passed every axis.
-

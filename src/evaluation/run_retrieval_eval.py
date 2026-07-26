@@ -37,6 +37,7 @@ CALIBRATION_THRESHOLDS = {
 }
 
 PRODUCTION_MODES = ("lexical", "semantic", "hybrid")
+THAI_REPRESENTATIVE_QUERY = "นโยบายการเดินทางต่างประเทศคืออะไร"
 
 
 @dataclass(frozen=True)
@@ -191,6 +192,41 @@ def _mode_section(name: str, cases: list[EvalCase]) -> list[str]:
     return lines
 
 
+def _thai_representative_section() -> list[str]:
+    """Render one explicit cross-language diagnostic outside frozen metrics."""
+    lines = [
+        "## Phase 2 representative Thai query",
+        "",
+        f"Query: `{THAI_REPRESENTATIVE_QUERY}`",
+        "",
+        "This diagnostic is reported separately from the frozen Thai slice and "
+        "is never used to tune its labels or the semantic threshold.",
+        "",
+        "| mode | status | retrieved titles |",
+        "|---|---|---|",
+    ]
+    for mode in PRODUCTION_MODES:
+        retriever = get_retriever(mode)
+        try:
+            results = tuple(retriever.search(THAI_REPRESENTATIVE_QUERY))
+        except MissingEmbeddingCredentialsError:
+            lines.append(f"| {mode} | skipped: missing credentials | n/a |")
+            continue
+
+        titles = list(_scored_titles(results))
+        rendered = ", ".join(f"`{title}`" for title in titles) or "`[]`"
+        lines.append(f"| {mode} | measured | {rendered} |")
+
+    lines += [
+        "",
+        "These rows exercise each raw retriever directly. Agent-generated "
+        "English translation sub-queries are evaluated separately by the "
+        "live answer runner.",
+        "",
+    ]
+    return lines
+
+
 def _dataset_section(
     name: str,
     cases: list[EvalCase],
@@ -312,6 +348,7 @@ def main() -> int:
                         file=sys.stderr,
                     )
 
+    lines += _thai_representative_section()
     RESULTS_PATH.write_text(
         "\n".join(lines).rstrip() + "\n",
         encoding="utf-8",

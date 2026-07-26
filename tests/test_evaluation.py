@@ -6,7 +6,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from src.evaluation.ablation import build_variants
 from src.evaluation.calibrate_threshold import (
@@ -27,6 +27,10 @@ from src.evaluation.metrics import (
     query_precision,
     query_recall,
     reciprocal_rank,
+)
+from src.evaluation.run_retrieval_eval import (
+    THAI_REPRESENTATIVE_QUERY,
+    _thai_representative_section,
 )
 from src.retrievers.base import ScoredChunk
 from src.tools.retrieval import DEFAULT_SETTINGS, search
@@ -272,6 +276,26 @@ class AblationTests(unittest.TestCase):
                     search(case.query),
                     search(case.query, settings=DEFAULT_SETTINGS),
                 )
+
+
+class RetrievalReportTests(unittest.TestCase):
+    @patch("src.evaluation.run_retrieval_eval.get_retriever")
+    def test_thai_representative_query_is_reported_per_mode(
+        self,
+        mock_get_retriever: Mock,
+    ) -> None:
+        retriever = Mock()
+        retriever.search.return_value = [
+            ScoredChunk(0, "--- Travel ---\nEvidence.", 0.8, "test")
+        ]
+        mock_get_retriever.return_value = retriever
+
+        section = "\n".join(_thai_representative_section())
+
+        self.assertIn(THAI_REPRESENTATIVE_QUERY, section)
+        self.assertEqual(section.count("| measured |"), 3)
+        self.assertIn("--- Travel ---", section)
+        self.assertEqual(retriever.search.call_count, 3)
 
 
 class ThresholdCalibrationTests(unittest.TestCase):

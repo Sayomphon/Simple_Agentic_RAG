@@ -15,7 +15,7 @@ Negative queries (empty expectation) are excluded from precision/recall/MRR and 
 | V4_+gate_sibling | 88.9% | 88.9% | 95.8% | 92.4% | 0.941 | 100.0% | 92.1% | 0.958 | 0.0% | 0.0% | 12.5% |
 | V5_current_+stemming | 100.0% | 100.0% | 100.0% | 100.0% | 1.000 | 100.0% | 100.0% | 1.000 | 0.0% | 0.0% | 0.0% |
 
-Current variant `V5_current_+stemming` latency: p50 0.02 ms, p95 0.04 ms (single process, local file scan).
+Current variant `V5_current_+stemming` latency: p50 0.03 ms, p95 0.05 ms (single process, local file scan).
 
 `V5_current_+stemming` matches every expected title list on calibration exactly.
 
@@ -24,8 +24,8 @@ Current variant `V5_current_+stemming` latency: p50 0.02 ms, p95 0.04 ms (single
 | mode | status | exact | P_macro | R_macro | F1 | MRR | FP_neg | embedding calls | p50 ms | p95 ms |
 |---|---|---|---|---|---|---|---|---|---:|---:|---:|
 | lexical | measured | 100.0% | 100.0% | 100.0% | 1.000 | 1.000 | 0.0% | 0 | 0.02 | 0.03 |
-| semantic | measured | 51.9% | 79.2% | 89.6% | 0.841 | 0.917 | 33.3% | 27 | 560.41 | 936.08 |
-| hybrid | measured | 70.4% | 87.5% | 100.0% | 0.933 | 1.000 | 33.3% | 27 | 505.40 | 668.11 |
+| semantic | measured | 51.9% | 79.2% | 89.6% | 0.841 | 0.917 | 33.3% | 27 | 580.40 | 1512.11 |
+| hybrid | measured | 70.4% | 87.5% | 100.0% | 0.933 | 1.000 | 33.3% | 27 | 538.99 | 1260.66 |
 
 `lexical` matches every case in calibration exactly.
 
@@ -56,11 +56,11 @@ Current variant `V5_current_+stemming` latency: p50 0.02 ms, p95 0.04 ms (single
 - `work_from_home_phrase` — query: 'How many days can an employee work from home each week?'
   - expected: ['--- Remote Work Policy ---']
   - retrieved: ['--- Remote Work Policy ---', '--- Hybrid Work Guidelines ---', '--- Annual Leave ---']
-  - scores: --- Remote Work Policy ---=0.5745 (semantic), --- Hybrid Work Guidelines ---=0.4530 (semantic), --- Annual Leave ---=0.4250 (semantic)
+  - scores: --- Remote Work Policy ---=0.5746 (semantic), --- Hybrid Work Guidelines ---=0.4531 (semantic), --- Annual Leave ---=0.4250 (semantic)
 - `overseas_per_diem` — query: 'How much is the overseas business trip per diem?'
   - expected: ['--- International Travel Daily Allowance ---']
   - retrieved: ['--- International Travel Daily Allowance ---', '--- International Travel Approval Process ---', '--- International Travel Insurance ---']
-  - scores: --- International Travel Daily Allowance ---=0.6056 (semantic), --- International Travel Approval Process ---=0.5013 (semantic), --- International Travel Insurance ---=0.4455 (semantic)
+  - scores: --- International Travel Daily Allowance ---=0.6056 (semantic), --- International Travel Approval Process ---=0.5014 (semantic), --- International Travel Insurance ---=0.4455 (semantic)
 - `paid_time_off` — query: 'How much paid time off do full-time staff receive?'
   - expected: ['--- Annual Leave ---']
   - retrieved: ['--- Annual Leave ---', '--- Remote Work Policy ---']
@@ -115,7 +115,7 @@ Current variant `V5_current_+stemming` latency: p50 0.02 ms, p95 0.04 ms (single
 - `generic_policy` — query: 'What company policy information is available?'
   - expected: []
   - retrieved: ['--- Remote Work Policy ---']
-  - scores: --- Remote Work Policy ---=0.4028 (semantic)
+  - scores: --- Remote Work Policy ---=0.4027 (semantic)
 
 ## Dataset: heldout (n=14)
 
@@ -128,7 +128,7 @@ Current variant `V5_current_+stemming` latency: p50 0.02 ms, p95 0.04 ms (single
 | V4_+gate_sibling | 50.0% | 50.0% | 60.6% | 63.6% | 0.621 | 90.0% | 64.3% | 0.636 | 66.7% | 9.1% | 36.4% |
 | V5_current_+stemming | 57.1% | 57.1% | 77.3% | 72.7% | 0.749 | 76.9% | 71.4% | 0.818 | 66.7% | 18.2% | 36.4% |
 
-Current variant `V5_current_+stemming` latency: p50 0.06 ms, p95 0.08 ms (single process, local file scan).
+Current variant `V5_current_+stemming` latency: p50 0.08 ms, p95 0.11 ms (single process, local file scan).
 
 ### `V5_current_+stemming` mismatches on heldout
 
@@ -155,9 +155,9 @@ Current variant `V5_current_+stemming` latency: p50 0.06 ms, p95 0.08 ms (single
 
 | mode | status | exact | P_macro | R_macro | F1 | MRR | FP_neg | embedding calls | p50 ms | p95 ms |
 |---|---|---|---|---|---|---|---|---|---:|---:|---:|
-| lexical | measured | 57.1% | 77.3% | 72.7% | 0.749 | 0.818 | 66.7% | 0 | 0.05 | 0.07 |
-| semantic | measured | 42.9% | 72.7% | 90.9% | 0.808 | 0.909 | 33.3% | 14 | 514.09 | 593.78 |
-| hybrid | measured | 42.9% | 75.8% | 100.0% | 0.862 | 0.955 | 66.7% | 14 | 492.31 | 552.81 |
+| lexical | measured | 57.1% | 77.3% | 72.7% | 0.749 | 0.818 | 66.7% | 0 | 0.06 | 0.08 |
+| semantic | measured | 42.9% | 72.7% | 90.9% | 0.808 | 0.909 | 33.3% | 14 | 377.06 | 510.31 |
+| hybrid | measured | 42.9% | 75.8% | 100.0% | 0.862 | 0.955 | 66.7% | 14 | 374.36 | 532.97 |
 
 #### `lexical` mismatches on heldout
 
@@ -213,7 +213,7 @@ Current variant `V5_current_+stemming` latency: p50 0.06 ms, p95 0.08 ms (single
 - `ho_p1_response_and_escalation` — query: 'P1 outage first response and escalation steps'
   - expected: ['--- Customer Support Service Levels ---', '--- Support Escalation Process ---']
   - retrieved: ['--- Support Escalation Process ---', '--- Customer Support Service Levels ---']
-  - scores: --- Support Escalation Process ---=0.5550 (semantic), --- Customer Support Service Levels ---=0.5278 (semantic)
+  - scores: --- Support Escalation Process ---=0.5551 (semantic), --- Customer Support Service Levels ---=0.5277 (semantic)
 - `ho_parental_leave` — query: "What is the company's parental leave policy?"
   - expected: []
   - retrieved: ['--- Annual Leave ---', '--- Remote Work Policy ---']
@@ -265,7 +265,7 @@ Current variant `V5_current_+stemming` latency: p50 0.06 ms, p95 0.08 ms (single
 | V4_+gate_sibling | 16.7% | 16.7% | n/a | n/a | n/a | n/a | n/a | n/a | 83.3% | n/a | n/a |
 | V5_current_+stemming | 8.3% | 8.3% | n/a | n/a | n/a | n/a | n/a | n/a | 91.7% | n/a | n/a |
 
-Current variant `V5_current_+stemming` latency: p50 0.07 ms, p95 0.09 ms (single process, local file scan).
+Current variant `V5_current_+stemming` latency: p50 0.05 ms, p95 0.06 ms (single process, local file scan).
 
 ### `V5_current_+stemming` mismatches on negatives
 
@@ -307,9 +307,9 @@ Current variant `V5_current_+stemming` latency: p50 0.07 ms, p95 0.09 ms (single
 
 | mode | status | exact | P_macro | R_macro | F1 | MRR | FP_neg | embedding calls | p50 ms | p95 ms |
 |---|---|---|---|---|---|---|---|---|---:|---:|---:|
-| lexical | measured | 8.3% | n/a | n/a | n/a | n/a | 91.7% | 0 | 0.08 | 0.16 |
-| semantic | measured | 58.3% | n/a | n/a | n/a | n/a | 41.7% | 12 | 484.47 | 565.58 |
-| hybrid | measured | 8.3% | n/a | n/a | n/a | n/a | 91.7% | 12 | 469.56 | 618.00 |
+| lexical | measured | 8.3% | n/a | n/a | n/a | n/a | 91.7% | 0 | 0.04 | 0.05 |
+| semantic | measured | 58.3% | n/a | n/a | n/a | n/a | 41.7% | 12 | 391.39 | 503.48 |
+| hybrid | measured | 8.3% | n/a | n/a | n/a | n/a | 91.7% | 12 | 410.16 | 516.58 |
 
 #### `lexical` mismatches on negatives
 
@@ -427,3 +427,166 @@ Current variant `V5_current_+stemming` latency: p50 0.07 ms, p95 0.09 ms (single
   - expected: []
   - retrieved: ['--- Expense Reimbursement ---', '--- Support Escalation Process ---']
   - scores: --- Expense Reimbursement ---=5.1376 (lexical), --- Support Escalation Process ---=4.6267 (lexical)
+
+## Dataset: thai (n=13)
+
+| variant | exact | set | P_macro | R_macro | F1 | P_micro | R_micro | MRR | FP_neg | over | under |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| V0_raw_overlap | 23.1% | 23.1% | 10.0% | 10.0% | 0.100 | 100.0% | 10.0% | 0.100 | 33.3% | 0.0% | 90.0% |
+| V1_+query_filters | 23.1% | 23.1% | 10.0% | 10.0% | 0.100 | 100.0% | 10.0% | 0.100 | 33.3% | 0.0% | 90.0% |
+| V2_+aliases | 23.1% | 23.1% | 10.0% | 10.0% | 0.100 | 100.0% | 10.0% | 0.100 | 33.3% | 0.0% | 90.0% |
+| V3_+idf_title_weight | 23.1% | 23.1% | 10.0% | 10.0% | 0.100 | 100.0% | 10.0% | 0.100 | 33.3% | 0.0% | 90.0% |
+| V4_+gate_sibling | 23.1% | 23.1% | 10.0% | 10.0% | 0.100 | 100.0% | 10.0% | 0.100 | 33.3% | 0.0% | 90.0% |
+| V5_current_+stemming | 23.1% | 23.1% | 10.0% | 10.0% | 0.100 | 100.0% | 10.0% | 0.100 | 33.3% | 0.0% | 90.0% |
+
+Current variant `V5_current_+stemming` latency: p50 0.02 ms, p95 0.06 ms (single process, local file scan).
+
+### `V5_current_+stemming` mismatches on thai
+
+- `th_remote_manager_approval` — query: 'การทำงานจากบ้านต้องได้รับอนุมัติจากใคร'
+  - expected: ['--- Remote Work Policy ---']
+  - retrieved: []
+- `th_remote_days_per_week` — query: 'พนักงานทำงานจากบ้านได้กี่วันต่อสัปดาห์'
+  - expected: ['--- Remote Work Policy ---']
+  - retrieved: []
+- `th_company_anchor_day` — query: 'วันไหนเป็นวันที่พนักงานทุกคนต้องเข้าออฟฟิศ'
+  - expected: ['--- Hybrid Work Guidelines ---']
+  - retrieved: []
+- `th_annual_leave_entitlement` — query: 'พนักงานประจำมีสิทธิลาพักร้อนได้กี่วันต่อปี'
+  - expected: ['--- Annual Leave ---']
+  - retrieved: []
+- `th_annual_leave_advance_notice` — query: 'ถ้าจะลาพักร้อนต้องยื่นคำขอล่วงหน้ากี่วัน'
+  - expected: ['--- Annual Leave ---']
+  - retrieved: []
+- `th_international_travel_approver` — query: 'การเดินทางไปต่างประเทศเพื่อธุรกิจต้องขออนุมัติจากใคร'
+  - expected: ['--- International Travel Approval Process ---']
+  - retrieved: []
+- `th_international_daily_allowance` — query: 'เบี้ยเลี้ยงเดินทางไปต่างประเทศได้วันละเท่าไหร่'
+  - expected: ['--- International Travel Daily Allowance ---']
+  - retrieved: []
+- `th_business_expense_deadline` — query: 'ต้องส่งใบเบิกค่าใช้จ่ายทางธุรกิจทั่วไปภายในกี่วัน'
+  - expected: ['--- Expense Reimbursement ---']
+  - retrieved: []
+- `th_travel_medical_coverage` — query: 'ประกันเดินทางไปต่างประเทศคุ้มครองค่ารักษาพยาบาลเท่าไหร่'
+  - expected: ['--- International Travel Insurance ---']
+  - retrieved: []
+- `th_negative_vpn_password_reset` — query: 'ต้องรีเซ็ตรหัสผ่าน TigerLink VPN อย่างไร'
+  - expected: []
+  - retrieved: ['--- Remote Work Policy ---']
+
+### Production retrieval modes
+
+| mode | status | exact | P_macro | R_macro | F1 | MRR | FP_neg | embedding calls | p50 ms | p95 ms |
+|---|---|---|---|---|---|---|---|---|---:|---:|---:|
+| lexical | measured | 23.1% | 10.0% | 10.0% | 0.100 | 0.100 | 33.3% | 0 | 0.02 | 0.05 |
+| semantic | measured | 30.8% | 10.0% | 10.0% | 0.100 | 0.100 | 0.0% | 13 | 415.69 | 529.50 |
+| hybrid | measured | 30.8% | 20.0% | 20.0% | 0.200 | 0.200 | 33.3% | 13 | 369.70 | 511.38 |
+
+#### `lexical` mismatches on thai
+
+- `th_remote_manager_approval` — query: 'การทำงานจากบ้านต้องได้รับอนุมัติจากใคร'
+  - expected: ['--- Remote Work Policy ---']
+  - retrieved: []
+- `th_remote_days_per_week` — query: 'พนักงานทำงานจากบ้านได้กี่วันต่อสัปดาห์'
+  - expected: ['--- Remote Work Policy ---']
+  - retrieved: []
+- `th_company_anchor_day` — query: 'วันไหนเป็นวันที่พนักงานทุกคนต้องเข้าออฟฟิศ'
+  - expected: ['--- Hybrid Work Guidelines ---']
+  - retrieved: []
+- `th_annual_leave_entitlement` — query: 'พนักงานประจำมีสิทธิลาพักร้อนได้กี่วันต่อปี'
+  - expected: ['--- Annual Leave ---']
+  - retrieved: []
+- `th_annual_leave_advance_notice` — query: 'ถ้าจะลาพักร้อนต้องยื่นคำขอล่วงหน้ากี่วัน'
+  - expected: ['--- Annual Leave ---']
+  - retrieved: []
+- `th_international_travel_approver` — query: 'การเดินทางไปต่างประเทศเพื่อธุรกิจต้องขออนุมัติจากใคร'
+  - expected: ['--- International Travel Approval Process ---']
+  - retrieved: []
+- `th_international_daily_allowance` — query: 'เบี้ยเลี้ยงเดินทางไปต่างประเทศได้วันละเท่าไหร่'
+  - expected: ['--- International Travel Daily Allowance ---']
+  - retrieved: []
+- `th_business_expense_deadline` — query: 'ต้องส่งใบเบิกค่าใช้จ่ายทางธุรกิจทั่วไปภายในกี่วัน'
+  - expected: ['--- Expense Reimbursement ---']
+  - retrieved: []
+- `th_travel_medical_coverage` — query: 'ประกันเดินทางไปต่างประเทศคุ้มครองค่ารักษาพยาบาลเท่าไหร่'
+  - expected: ['--- International Travel Insurance ---']
+  - retrieved: []
+- `th_negative_vpn_password_reset` — query: 'ต้องรีเซ็ตรหัสผ่าน TigerLink VPN อย่างไร'
+  - expected: []
+  - retrieved: ['--- Remote Work Policy ---']
+  - scores: --- Remote Work Policy ---=5.9849 (lexical)
+
+#### `semantic` mismatches on thai
+
+- `th_remote_manager_approval` — query: 'การทำงานจากบ้านต้องได้รับอนุมัติจากใคร'
+  - expected: ['--- Remote Work Policy ---']
+  - retrieved: []
+- `th_remote_days_per_week` — query: 'พนักงานทำงานจากบ้านได้กี่วันต่อสัปดาห์'
+  - expected: ['--- Remote Work Policy ---']
+  - retrieved: []
+- `th_annual_leave_entitlement` — query: 'พนักงานประจำมีสิทธิลาพักร้อนได้กี่วันต่อปี'
+  - expected: ['--- Annual Leave ---']
+  - retrieved: []
+- `th_annual_leave_advance_notice` — query: 'ถ้าจะลาพักร้อนต้องยื่นคำขอล่วงหน้ากี่วัน'
+  - expected: ['--- Annual Leave ---']
+  - retrieved: []
+- `th_international_travel_approver` — query: 'การเดินทางไปต่างประเทศเพื่อธุรกิจต้องขออนุมัติจากใคร'
+  - expected: ['--- International Travel Approval Process ---']
+  - retrieved: []
+- `th_international_daily_allowance` — query: 'เบี้ยเลี้ยงเดินทางไปต่างประเทศได้วันละเท่าไหร่'
+  - expected: ['--- International Travel Daily Allowance ---']
+  - retrieved: []
+- `th_business_expense_deadline` — query: 'ต้องส่งใบเบิกค่าใช้จ่ายทางธุรกิจทั่วไปภายในกี่วัน'
+  - expected: ['--- Expense Reimbursement ---']
+  - retrieved: []
+- `th_travel_medical_coverage` — query: 'ประกันเดินทางไปต่างประเทศคุ้มครองค่ารักษาพยาบาลเท่าไหร่'
+  - expected: ['--- International Travel Insurance ---']
+  - retrieved: []
+- `th_paysiam_international_card_fee` — query: 'ค่าธรรมเนียมบัตรต่างประเทศของ PaySiam เท่าไหร่'
+  - expected: ['--- PaySiam Gateway Product Overview ---']
+  - retrieved: []
+
+#### `hybrid` mismatches on thai
+
+- `th_remote_manager_approval` — query: 'การทำงานจากบ้านต้องได้รับอนุมัติจากใคร'
+  - expected: ['--- Remote Work Policy ---']
+  - retrieved: []
+- `th_remote_days_per_week` — query: 'พนักงานทำงานจากบ้านได้กี่วันต่อสัปดาห์'
+  - expected: ['--- Remote Work Policy ---']
+  - retrieved: []
+- `th_annual_leave_entitlement` — query: 'พนักงานประจำมีสิทธิลาพักร้อนได้กี่วันต่อปี'
+  - expected: ['--- Annual Leave ---']
+  - retrieved: []
+- `th_annual_leave_advance_notice` — query: 'ถ้าจะลาพักร้อนต้องยื่นคำขอล่วงหน้ากี่วัน'
+  - expected: ['--- Annual Leave ---']
+  - retrieved: []
+- `th_international_travel_approver` — query: 'การเดินทางไปต่างประเทศเพื่อธุรกิจต้องขออนุมัติจากใคร'
+  - expected: ['--- International Travel Approval Process ---']
+  - retrieved: []
+- `th_international_daily_allowance` — query: 'เบี้ยเลี้ยงเดินทางไปต่างประเทศได้วันละเท่าไหร่'
+  - expected: ['--- International Travel Daily Allowance ---']
+  - retrieved: []
+- `th_business_expense_deadline` — query: 'ต้องส่งใบเบิกค่าใช้จ่ายทางธุรกิจทั่วไปภายในกี่วัน'
+  - expected: ['--- Expense Reimbursement ---']
+  - retrieved: []
+- `th_travel_medical_coverage` — query: 'ประกันเดินทางไปต่างประเทศคุ้มครองค่ารักษาพยาบาลเท่าไหร่'
+  - expected: ['--- International Travel Insurance ---']
+  - retrieved: []
+- `th_negative_vpn_password_reset` — query: 'ต้องรีเซ็ตรหัสผ่าน TigerLink VPN อย่างไร'
+  - expected: []
+  - retrieved: ['--- Remote Work Policy ---']
+  - scores: --- Remote Work Policy ---=5.9849 (lexical)
+
+## Phase 2 representative Thai query
+
+Query: `นโยบายการเดินทางต่างประเทศคืออะไร`
+
+This diagnostic is reported separately from the frozen Thai slice and is never used to tune its labels or the semantic threshold.
+
+| mode | status | retrieved titles |
+|---|---|---|
+| lexical | measured | `[]` |
+| semantic | measured | `[]` |
+| hybrid | measured | `[]` |
+
+These rows exercise each raw retriever directly. Agent-generated English translation sub-queries are evaluated separately by the live answer runner.
