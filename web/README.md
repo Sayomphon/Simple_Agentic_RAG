@@ -32,7 +32,7 @@ python3 -m http.server 8000  # then open http://localhost:8000/web/
 |---|---|
 | `index.html` | Markup for the five stages, query form, and empty/error states |
 | `styles.css` | Design tokens, layout, badges, skeletons, light + dark themes |
-| `api.js` | **The only backend seam.** `runWorkflow(query, { onStage })` |
+| `api.js` | **The only backend seam.** `runWorkflow(query, { onStage, signal })` |
 | `mock-data.js` | Offline fixtures: the 10 real KB sections + a matching gate |
 | `app.js` | One state object, one render pass per change |
 
@@ -113,6 +113,26 @@ Each sample chip demonstrates a different path:
 
 Empty state shows before the first query. Loading shows skeletons with per-stage
 `Running` badges. Errors surface inline with a retry.
+
+## Interaction details
+
+- **Cancel.** The Run button stays enabled while busy and relabels to *Cancel*
+  (Enter/⌘+Enter follow the same rule); the sticky compact bar also gets a
+  Cancel action once the query card scrolls out of view. Cancelling aborts the
+  in-flight `fetch` in live mode and rejects the mock's promise chain with
+  `error.name === "CancelledError"`, which `app.js` treats as a silent return
+  to the empty state rather than an error. Pass `signal` (an `AbortSignal`) to
+  `runWorkflow` to support this from a different UI.
+- **Collapsible steps.** Each stage header is a `.step-toggle` button
+  (`aria-expanded` + `aria-controls`) that hides its `.step-body`. Purely
+  presentational — it never touches pipeline state.
+- **Evidence clamp.** `#evidence-clamp` caps the evidence panel at 480px and
+  fades out once a query's combined snippets exceed that height (the
+  international-travel sample query is the built-in example); `#evidence-expand`
+  removes the cap. Small result sets never clamp.
+- **Compact bar.** An `IntersectionObserver` on `#query-card` shows `#compact-bar`
+  once the card scrolls away and a run has happened, mirroring the run's status,
+  query, and elapsed timer.
 
 ## About the mock
 

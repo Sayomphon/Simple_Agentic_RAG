@@ -33,23 +33,37 @@
     form: document.getElementById("query-form"),
     input: document.getElementById("query-input"),
     runButton: document.getElementById("run-button"),
+    runTimer: document.getElementById("run-timer"),
     chips: document.getElementById("sample-chips"),
     sourceToggle: document.getElementById("source-toggle"),
     sourceLabel: document.getElementById("source-label"),
     liveRegion: document.getElementById("live-region"),
+    queryCard: document.getElementById("query-card"),
     emptyState: document.getElementById("empty-state"),
     errorState: document.getElementById("error-state"),
+    errorCode: document.getElementById("error-code"),
     errorMessage: document.getElementById("error-message"),
+    errorDetails: document.getElementById("error-details"),
+    errorRequestId: document.getElementById("error-request-id"),
+    errorRaw: document.getElementById("error-raw"),
     retryButton: document.getElementById("retry-button"),
+    retryStatus: document.getElementById("retry-status"),
     pipeline: document.getElementById("pipeline"),
     stageQuery: document.getElementById("stage-query"),
     toolCall: document.querySelector("#stage-tool-call code"),
     retrieverMeta: document.getElementById("retriever-meta"),
+    evidenceClamp: document.getElementById("evidence-clamp"),
+    evidenceExpand: document.getElementById("evidence-expand"),
     evidenceList: document.getElementById("evidence-list"),
     generatorMeta: document.getElementById("generator-meta"),
     answerBody: document.getElementById("answer-body"),
     answerMeta: document.getElementById("answer-meta"),
-    copyAnswer: document.getElementById("copy-answer")
+    copyAnswer: document.getElementById("copy-answer"),
+    compactBar: document.getElementById("compact-bar"),
+    compactStatus: document.getElementById("compact-status"),
+    compactQuery: document.getElementById("compact-query"),
+    compactTimer: document.getElementById("compact-timer"),
+    compactAction: document.getElementById("compact-action")
   };
 
   var state = {
@@ -57,7 +71,11 @@
     query: "",
     result: null,
     error: null,
-    firstRun: true
+    firstRun: true,
+    runId: 0,
+    controller: null,
+    startedAt: 0,
+    timerHandle: null
   };
 
   /* ── Helpers ──────────────────────────────────────────────────────────── */
@@ -72,6 +90,45 @@
 
   function announce(message) {
     el.liveRegion.textContent = message;
+  }
+
+  /* ── Elapsed-time ticker (run button + compact bar) ─────────────────────── */
+
+  function startTimer() {
+    state.startedAt = Date.now();
+    tickTimer();
+    state.timerHandle = global.setInterval(tickTimer, 100);
+  }
+
+  function stopTimer() {
+    if (state.timerHandle) {
+      global.clearInterval(state.timerHandle);
+      state.timerHandle = null;
+    }
+  }
+
+  function tickTimer() {
+    var elapsed = ((Date.now() - state.startedAt) / 1000).toFixed(1) + "s";
+    el.runTimer.textContent = elapsed;
+    el.compactTimer.textContent = elapsed;
+  }
+
+  /* ── Compact bar ──────────────────────────────────────────────────────── */
+
+  function statusLabel() {
+    if (state.status === "running") return "Running";
+    if (state.status === "error") return "Failed";
+    if (state.status === "done") {
+      return state.result && state.result.notFound ? "No evidence found" : "Completed";
+    }
+    return "Waiting";
+  }
+
+  /** Mirrors the run's headline status once the query card scrolls out of view. */
+  function updateCompactBar() {
+    el.compactStatus.textContent = statusLabel();
+    el.compactStatus.setAttribute("data-state", state.status === "idle" ? "waiting" : state.status);
+    el.compactQuery.textContent = state.query;
   }
 
   function sectionTitle(chunk) {
@@ -179,7 +236,13 @@
 
   /* ── Stage renderers ──────────────────────────────────────────────────── */
 
+  var EVIDENCE_CLAMP_HEIGHT = 480;
+
   function renderEvidence(snippets) {
+    el.evidenceClamp.classList.remove("is-clamped");
+    el.evidenceExpand.hidden = true;
+    el.evidenceExpand.setAttribute("aria-expanded", "false");
+
     if (!snippets.length) {
       el.evidenceList.innerHTML =
         '<div class="evidence-none">' +
@@ -211,6 +274,13 @@
         );
       })
       .join("");
+
+    if (el.evidenceList.scrollHeight > EVIDENCE_CLAMP_HEIGHT) {
+      el.evidenceClamp.classList.add("is-clamped");
+      el.evidenceExpand.hidden = false;
+      el.evidenceExpand.textContent =
+        "Show all " + snippets.length + (snippets.length === 1 ? " section" : " sections");
+    }
   }
 
   function renderToolCall(query) {
@@ -254,12 +324,29 @@
   /* ── Run ──────────────────────────────────────────────────────────────── */
 
   function setBusy(isBusy) {
-    el.runButton.disabled = isBusy;
     el.runButton.setAttribute("data-busy", String(isBusy));
-    el.runButton.querySelector(".btn-label").textContent = isBusy ? "Running" : "Run";
+    el.runButton.querySelector(".btn-label").textContent = isBusy ? "Cancel" : "Run";
+    el.runTimer.hidden = !isBusy;
+    el.compactTimer.hidden = !isBusy;
+    el.compactAction.hidden = !isBusy;
     Array.prototype.forEach.call(el.chips.querySelectorAll(".chip"), function (chip) {
       chip.disabled = isBusy;
     });
+  }
+
+  /**
+   * api.js normalizes every failure into a plain Error with a descriptive
+   * message before it reaches the UI (see runLive's catch), so classify by
+   * message rather than by constructor/name.
+   */
+  function classifyError(error) {
+    var message = (error && error.message) || "";
+    if (!message) return "UNKNOWN";
+    if (/could not reach the backend/i.test(message)) return "NETWORK";
+    if (/timed out/i.test(message)) return "TIMEOUT";
+    if (/^Backend responded with \d/.test(message)) return "BACKEND";
+    if (/malformed response/i.test(message)) return "BACKEND";
+    return "RUNTIME";
   }
 
   function run(query) {
@@ -269,7 +356,11 @@
     state.query = query;
     state.result = null;
     state.error = null;
+    state.runId += 1;
+    var runId = state.runId;
+    state.controller = typeof AbortController === "function" ? new AbortController() : null;
 
+    updateCompactBar();
     setBusy(true);
     el.emptyState.hidden = true;
     el.errorState.hidden = true;
@@ -286,6 +377,7 @@
     setStage("query", "done");
     setStage("evidence", "running");
     announce("Running the workflow.");
+    startTimer();
 
     if (state.firstRun) {
       state.firstRun = false;
@@ -293,10 +385,15 @@
     }
 
     api
-      .runWorkflow(query, { onStage: handleStage })
+      .runWorkflow(query, {
+        onStage: handleStage,
+        signal: state.controller ? state.controller.signal : undefined
+      })
       .then(function (result) {
+        if (runId !== state.runId) return;
         state.status = "done";
         state.result = result;
+        updateCompactBar();
         renderResult(result);
         announce(
           result.notFound
@@ -305,11 +402,22 @@
         );
       })
       .catch(function (error) {
+        if (runId !== state.runId) return;
+        if (error && error.name === "CancelledError") {
+          state.status = "idle";
+          resetStages("waiting");
+          el.pipeline.hidden = true;
+          el.emptyState.hidden = false;
+          announce("Workflow cancelled.");
+          return;
+        }
         state.status = "error";
         state.error = error;
         showError(error);
       })
       .then(function () {
+        if (runId !== state.runId) return;
+        stopTimer();
         setBusy(false);
       });
   }
@@ -318,7 +426,13 @@
     var message =
       (error && error.message) || "The workflow could not be completed. Please try again.";
 
+    updateCompactBar();
+    el.errorCode.textContent = classifyError(error);
     el.errorMessage.textContent = message;
+    el.errorRequestId.textContent = "run-" + state.runId;
+    el.errorRaw.textContent = (error && (error.stack || error.message)) || String(error);
+    el.errorDetails.open = false;
+    el.retryStatus.textContent = "";
     el.errorState.hidden = false;
 
     // Keep the pipeline visible so the failing stage stays identifiable.
@@ -370,6 +484,10 @@
 
   el.form.addEventListener("submit", function (event) {
     event.preventDefault();
+    if (state.status === "running") {
+      if (state.controller) state.controller.abort();
+      return;
+    }
     var query = el.input.value.trim();
     if (!query) {
       el.input.focus();
@@ -396,6 +514,11 @@
     copyToClipboard(state.result.snippets[Number(button.dataset.copy)], button);
   });
 
+  el.evidenceExpand.addEventListener("click", function () {
+    el.evidenceClamp.classList.remove("is-clamped");
+    el.evidenceExpand.hidden = true;
+  });
+
   el.copyAnswer.addEventListener("click", function () {
     if (state.result) copyToClipboard(state.result.report, el.copyAnswer);
   });
@@ -404,6 +527,19 @@
     api.setMode(api.getMode() === "live" ? "mock" : "live");
     renderSourceToggle();
     announce("Data source set to " + el.sourceLabel.textContent + ".");
+  });
+
+  el.compactAction.addEventListener("click", function () {
+    if (state.controller) state.controller.abort();
+  });
+
+  el.pipeline.addEventListener("click", function (event) {
+    var toggle = event.target.closest(".step-toggle");
+    if (!toggle) return;
+    var wasExpanded = toggle.getAttribute("aria-expanded") === "true";
+    toggle.setAttribute("aria-expanded", String(!wasExpanded));
+    var card = toggle.closest(".step-card");
+    if (card) card.classList.toggle("is-collapsed", wasExpanded);
   });
 
   document.addEventListener("keydown", function (event) {
@@ -417,7 +553,21 @@
     }
   });
 
+  // Sticky summary bar: visible only while a run has happened and the full
+  // query card has scrolled out of view.
+  if (typeof IntersectionObserver === "function") {
+    var queryCardVisibility = new IntersectionObserver(
+      function (entries) {
+        var entry = entries[entries.length - 1];
+        el.compactBar.hidden = entry.isIntersecting || el.pipeline.hidden;
+      },
+      { threshold: 0 }
+    );
+    queryCardVisibility.observe(el.queryCard);
+  }
+
   renderChips();
   renderSourceToggle();
   resetStages("waiting");
+  updateCompactBar();
 })(window, document);

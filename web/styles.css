@@ -145,6 +145,44 @@ pre {
   box-shadow: var(--shadow);
 }
 
+/* ── Compact bar ────────────────────────────────────────────────────────── */
+/* Sticky summary shown once the full query card scrolls out of view. */
+
+.compactbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+.compactbar-query {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.85rem;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compactbar-timer {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.compactbar .btn-secondary {
+  padding: 5px 12px;
+  font-size: 0.78rem;
+}
+
 /* ── Header ─────────────────────────────────────────────────────────────── */
 
 .app-header {
@@ -303,24 +341,11 @@ pre {
   cursor: not-allowed;
 }
 
-.spinner {
-  display: none;
-  width: 14px;
-  height: 14px;
-  border: 2px solid rgba(255, 255, 255, 0.45);
-  border-top-color: #fff;
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-}
-
-.btn-primary[data-busy="true"] .spinner {
-  display: block;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+.btn-timer {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.82rem;
+  font-weight: 600;
+  opacity: 0.9;
 }
 
 .chips {
@@ -389,38 +414,100 @@ pre {
   color: var(--text-muted);
 }
 
-.error-card {
+.error-banner {
   display: flex;
-  align-items: flex-start;
-  gap: 14px;
+  flex-direction: column;
+  gap: 10px;
   padding: 18px 20px;
   border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
   background: var(--danger-soft);
 }
 
-.error-card .state-icon {
+.error-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.error-head .error-icon {
+  width: 20px;
+  height: 20px;
   background: transparent;
   color: var(--danger);
-  width: 24px;
-  height: 24px;
-  margin-top: 2px;
+  flex: none;
 }
 
-.error-body {
+.error-head .error-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.error-head h2 {
   flex: 1;
   min-width: 0;
-}
-
-.error-card h2 {
   font-size: 0.92rem;
   font-weight: 620;
   color: var(--danger);
 }
 
-.error-card p {
+.error-code {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 5px;
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--border));
+  color: var(--danger);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.error-message {
   font-size: 0.87rem;
   color: var(--text-muted);
   word-break: break-word;
+}
+
+.error-details summary {
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.error-details summary:hover {
+  color: var(--danger);
+}
+
+.error-detail-meta {
+  margin: 10px 0 0;
+}
+
+.error-details pre#error-raw {
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.error-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.error-retry-status {
+  font-size: 0.78rem;
+  color: var(--text-muted);
 }
 
 .btn-ghost {
@@ -437,6 +524,33 @@ pre {
 
 .btn-ghost:hover {
   background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: none;
+  padding: 8px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-secondary:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* ── Pipeline rail ──────────────────────────────────────────────────────── */
@@ -527,8 +641,43 @@ pre {
   gap: 12px;
 }
 
-.step-index {
-  display: block;
+.step-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chevron {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  color: var(--text-faint);
+  transition: transform 0.15s ease;
+}
+
+.step-toggle[aria-expanded="false"] .chevron {
+  transform: rotate(-90deg);
+}
+
+.step-toggle:hover .chevron {
+  color: var(--accent);
+}
+
+.step-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.step-eyebrow {
   font-size: 0.68rem;
   font-weight: 650;
   letter-spacing: 0.07em;
@@ -536,10 +685,20 @@ pre {
   color: var(--text-faint);
 }
 
-.step-title h2 {
+.step-title {
   font-size: 0.97rem;
   font-weight: 620;
   letter-spacing: -0.01em;
+}
+
+.step-body-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.step-card.is-collapsed .step-body {
+  display: none;
 }
 
 .head-actions {
@@ -771,6 +930,45 @@ pre {
   background: var(--warn-soft);
   color: var(--warn);
   font-size: 0.85rem;
+}
+
+.clamp {
+  position: relative;
+}
+
+.clamp.is-clamped {
+  max-height: 480px;
+  overflow: hidden;
+}
+
+.clamp.is-clamped::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 64px;
+  background: linear-gradient(to bottom, transparent, var(--surface));
+  pointer-events: none;
+}
+
+.clamp-toggle {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 7px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.clamp-toggle:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 /* ── Final answer ───────────────────────────────────────────────────────── */

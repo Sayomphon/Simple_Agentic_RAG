@@ -57,6 +57,12 @@
     });
   }
 
+  function cancelledError() {
+    var error = new Error("Cancelled by user.");
+    error.name = "CancelledError";
+    return error;
+  }
+
   function normalize(payload, query) {
     var snippets = Array.isArray(payload && payload.snippets) ? payload.snippets : [];
     var report = payload && typeof payload.report === "string" ? payload.report.trim() : "";
@@ -70,12 +76,17 @@
   }
 
   /** Fixture run with realistic pacing so each stage transition is visible. */
-  function runMock(query, emit) {
+  function runMock(query, emit, signal) {
     var snippets;
+
+    function throwIfCancelled() {
+      if (signal && signal.aborted) throw cancelledError();
+    }
 
     emit("retriever", "running");
     return wait(650)
       .then(function () {
+        throwIfCancelled();
         snippets = global.RAG_MOCK.retrieve(query);
         emit("retriever", "done");
         emit("evidence", snippets.length ? "done" : "empty");
@@ -85,6 +96,7 @@
         return wait(900);
       })
       .then(function () {
+        throwIfCancelled();
         var report = global.RAG_MOCK.report(query, snippets);
         return normalize({ query: query, snippets: snippets, report: report }, query);
       });
@@ -98,11 +110,30 @@
    * per-node progress, expose a streaming endpoint (SSE over LangGraph's
    * `graph.stream`) and emit here as each node event arrives.
    */
-  function runLive(query, emit) {
+  function runLive(query, emit, signal) {
     var controller = typeof AbortController === "function" ? new AbortController() : null;
     var timer = global.setTimeout(function () {
       if (controller) controller.abort();
     }, CONFIG.timeoutMs);
+
+    // A caller-supplied signal (Cancel button) aborts the same controller as
+    // the timeout, so both paths land in the single AbortError branch below.
+    var cancelledByCaller = false;
+    if (signal && controller) {
+      if (signal.aborted) {
+        cancelledByCaller = true;
+        controller.abort();
+      } else {
+        signal.addEventListener(
+          "abort",
+          function () {
+            cancelledByCaller = true;
+            controller.abort();
+          },
+          { once: true }
+        );
+      }
+    }
 
     emit("retriever", "running");
 
@@ -139,6 +170,7 @@
       })
       .catch(function (error) {
         if (error && error.name === "AbortError") {
+          if (cancelledByCaller) throw cancelledError();
           throw new Error("The workflow timed out before the backend responded.");
         }
         if (error instanceof TypeError) {
@@ -159,7 +191,9 @@
    * Run the full workflow for one query.
    *
    * @param {string} query
-   * @param {{ onStage?: (stage: string, status: string) => void }} [options]
+   * @param {{ onStage?: (stage: string, status: string) => void,
+   *           signal?: AbortSignal }} [options] - `signal` cancels the run;
+   *           the returned promise then rejects with `name: "CancelledError"`.
    * @returns {Promise<{query: string, snippets: string[], report: string,
    *                    source: string, durationMs: number, notFound: boolean}>}
    */
@@ -176,7 +210,7 @@
 
     var run = mode === "live" ? runLive : runMock;
 
-    return run(query, emit).then(function (result) {
+    return run(query, emit, opts.signal).then(function (result) {
       var finished =
         result ||
         normalize({ query: query, snippets: [], report: NOT_FOUND_SENTENCE }, query);

@@ -12,10 +12,22 @@
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Cpath d='M9 11h14M9 16h14M9 21h8' stroke='white' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E"
     />
+    <link rel="stylesheet" href="tokens.css" />
     <link rel="stylesheet" href="styles.css" />
   </head>
 
   <body>
+    <!-- Sticky compact query bar: first in DOM because when visible it is the
+         topmost element on screen, keeping tab order aligned with reading
+         order. Hidden (display:none) until the full query card scrolls away,
+         so it never receives focus while invisible. -->
+    <div class="compactbar" id="compact-bar" hidden>
+      <span class="badge" id="compact-status" data-state="waiting"></span>
+      <span class="compactbar-query" id="compact-query"></span>
+      <span class="compactbar-timer" id="compact-timer" hidden>0.0s</span>
+      <button type="button" id="compact-action" class="btn-secondary" hidden>Cancel</button>
+    </div>
+
     <div class="app">
       <header class="app-header">
         <div class="brand">
@@ -34,7 +46,6 @@
           type="button"
           id="source-toggle"
           class="source-pill"
-          aria-live="polite"
           title="Switch between bundled mock data and a live backend"
         >
           <span class="source-dot" aria-hidden="true"></span>
@@ -43,7 +54,7 @@
       </header>
 
       <!-- ── Query ─────────────────────────────────────────────────────── -->
-      <section class="card query-card">
+      <section class="card query-card" id="query-card">
         <label class="field-label" for="query-input">Ask the knowledge base</label>
 
         <form id="query-form" class="query-row" novalidate>
@@ -61,18 +72,22 @@
               placeholder="e.g. What is the policy on international travel?"
             />
           </div>
+          <!-- Submit while idle; app.js turns it into a Cancel button (type=button
+               semantics handled in JS) with a live elapsed timer while running. -->
           <button type="submit" id="run-button" class="btn-primary">
             <span class="btn-label">Run</span>
-            <span class="spinner" aria-hidden="true"></span>
+            <span class="btn-timer" id="run-timer" hidden>0.0s</span>
           </button>
         </form>
 
         <div class="chips" id="sample-chips" aria-label="Sample queries"></div>
       </section>
 
+      <!-- The ONLY live region: every status announcement funnels through
+           app.js announce(). Do not add aria-live anywhere else. -->
       <p id="live-region" class="sr-only" role="status" aria-live="polite"></p>
 
-      <!-- ── Empty state ───────────────────────────────────────────────── -->
+      <!-- ── First-visit empty state ───────────────────────────────────── -->
       <section class="card state-card" id="empty-state">
         <span class="state-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
@@ -87,25 +102,42 @@
         </p>
       </section>
 
-      <!-- ── Error state ───────────────────────────────────────────────── -->
-      <section class="card error-card" id="error-state" hidden>
-        <span class="state-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-            <circle cx="12" cy="12" r="8.5" />
-            <path d="M12 8v5M12 16h.01" stroke-linecap="round" />
-          </svg>
-        </span>
-        <div class="error-body">
+      <!-- ── Error banner (sits above the timeline) ────────────────────── -->
+      <section class="card error-banner" id="error-state" hidden>
+        <div class="error-head">
+          <span class="state-icon error-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <circle cx="12" cy="12" r="8.5" />
+              <path d="M12 8v5M12 16h.01" stroke-linecap="round" />
+            </svg>
+          </span>
           <h2>Workflow failed</h2>
-          <p id="error-message">Something went wrong.</p>
+          <code class="error-code" id="error-code">UNKNOWN</code>
         </div>
-        <button type="button" id="retry-button" class="btn-ghost">Retry</button>
+
+        <p class="error-message" id="error-message">Something went wrong.</p>
+
+        <details class="error-details" id="error-details">
+          <summary>Raw error</summary>
+          <dl class="meta error-detail-meta">
+            <div>
+              <dt>Client run id</dt>
+              <dd><code id="error-request-id">—</code></dd>
+            </div>
+          </dl>
+          <pre id="error-raw"></pre>
+        </details>
+
+        <div class="error-actions">
+          <button type="button" id="retry-button" class="btn-secondary">Retry</button>
+          <span class="error-retry-status" id="retry-status"></span>
+        </div>
       </section>
 
-      <!-- ── Pipeline ──────────────────────────────────────────────────── -->
+      <!-- ── Pipeline: 5 steps on the timeline rail ────────────────────── -->
       <ol class="pipeline" id="pipeline" hidden>
         <!-- 1 · User query -->
-        <li class="step" data-step="query">
+        <li class="step" data-step="query" data-state="waiting">
           <span class="step-marker" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
               <circle cx="12" cy="8.5" r="3.5" />
@@ -114,18 +146,27 @@
           </span>
           <article class="card step-card">
             <header class="step-head">
-              <div class="step-title">
-                <span class="step-index">Step 1</span>
-                <h2>User Query</h2>
-              </div>
-              <span class="badge" data-badge="query">Waiting</span>
+              <button type="button" class="step-toggle" aria-expanded="true" aria-controls="step-body-query">
+                <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="m8 10 4 4 4-4" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <span class="step-heading">
+                  <span class="step-eyebrow">Step 1</span>
+                  <h2 class="step-title">User Query</h2>
+                </span>
+              </button>
+              <span class="badge" data-badge="query" data-state="waiting"></span>
             </header>
-            <p class="query-echo" id="stage-query"></p>
+            <div class="step-body" id="step-body-query">
+              <div class="step-body-inner">
+                <p class="query-echo" id="stage-query"></p>
+              </div>
+            </div>
           </article>
         </li>
 
         <!-- 2 · Data Retriever Agent -->
-        <li class="step" data-step="retriever">
+        <li class="step" data-step="retriever" data-state="waiting">
           <span class="step-marker" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
               <ellipse cx="12" cy="6" rx="7" ry="3" />
@@ -135,23 +176,32 @@
           </span>
           <article class="card step-card">
             <header class="step-head">
-              <div class="step-title">
-                <span class="step-index">Step 2 · Agent</span>
-                <h2>Data Retriever Agent</h2>
-              </div>
-              <span class="badge" data-badge="retriever">Waiting</span>
+              <button type="button" class="step-toggle" aria-expanded="true" aria-controls="step-body-retriever">
+                <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="m8 10 4 4 4-4" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <span class="step-heading">
+                  <span class="step-eyebrow">Step 2 · Agent</span>
+                  <h2 class="step-title">Data Retriever Agent</h2>
+                </span>
+              </button>
+              <span class="badge" data-badge="retriever" data-state="waiting"></span>
             </header>
-            <p class="step-note">
-              Calls the retrieval tool once and hands its output on untouched — it never
-              answers, summarises, or rewrites.
-            </p>
-            <pre class="tool-call" id="stage-tool-call"><code></code></pre>
-            <dl class="meta" id="retriever-meta"></dl>
+            <div class="step-body" id="step-body-retriever">
+              <div class="step-body-inner">
+                <p class="step-note">
+                  Calls the retrieval tool once and hands its output on untouched — it never
+                  answers, summarises, or rewrites.
+                </p>
+                <pre class="tool-call" id="stage-tool-call"><code></code></pre>
+                <dl class="meta" id="retriever-meta"></dl>
+              </div>
+            </div>
           </article>
         </li>
 
         <!-- 3 · Retrieved evidence -->
-        <li class="step" data-step="evidence">
+        <li class="step" data-step="evidence" data-state="waiting">
           <span class="step-marker" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
               <path d="M6 4h9l4 4v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" />
@@ -160,19 +210,38 @@
           </span>
           <article class="card step-card">
             <header class="step-head">
-              <div class="step-title">
-                <span class="step-index">Step 3 · Handoff</span>
-                <h2>Retrieved Evidence</h2>
-              </div>
-              <span class="badge" data-badge="evidence">Waiting</span>
+              <button type="button" class="step-toggle" aria-expanded="true" aria-controls="step-body-evidence">
+                <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="m8 10 4 4 4-4" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <span class="step-heading">
+                  <span class="step-eyebrow">Step 3 · Handoff</span>
+                  <h2 class="step-title">Retrieved Evidence</h2>
+                </span>
+              </button>
+              <span class="badge" data-badge="evidence" data-state="waiting"></span>
             </header>
-            <p class="step-note">Raw sections exactly as returned by the tool.</p>
-            <div id="evidence-list" class="evidence-list"></div>
+            <div class="step-body" id="step-body-evidence">
+              <div class="step-body-inner">
+                <p class="step-note">Raw sections exactly as returned by the tool.</p>
+                <div class="clamp" id="evidence-clamp">
+                  <div id="evidence-list" class="evidence-list"></div>
+                </div>
+                <button
+                  type="button"
+                  id="evidence-expand"
+                  class="clamp-toggle"
+                  aria-expanded="false"
+                  aria-controls="evidence-clamp"
+                  hidden
+                ></button>
+              </div>
+            </div>
           </article>
         </li>
 
         <!-- 4 · Report Generator Agent -->
-        <li class="step" data-step="generator">
+        <li class="step" data-step="generator" data-state="waiting">
           <span class="step-marker" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
               <path d="M12 3.5 13.7 8l4.5 1.7-4.5 1.7L12 16l-1.7-4.6L5.8 9.7 10.3 8z" stroke-linejoin="round" />
@@ -181,21 +250,30 @@
           </span>
           <article class="card step-card">
             <header class="step-head">
-              <div class="step-title">
-                <span class="step-index">Step 4 · Agent</span>
-                <h2>Report Generator Agent</h2>
-              </div>
-              <span class="badge" data-badge="generator">Waiting</span>
+              <button type="button" class="step-toggle" aria-expanded="true" aria-controls="step-body-generator">
+                <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="m8 10 4 4 4-4" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <span class="step-heading">
+                  <span class="step-eyebrow">Step 4 · Agent</span>
+                  <h2 class="step-title">Report Generator Agent</h2>
+                </span>
+              </button>
+              <span class="badge" data-badge="generator" data-state="waiting"></span>
             </header>
-            <p class="step-note">
-              Synthesises one grounded answer from the retrieved evidence only.
-            </p>
-            <dl class="meta" id="generator-meta"></dl>
+            <div class="step-body" id="step-body-generator">
+              <div class="step-body-inner">
+                <p class="step-note">
+                  Synthesises one grounded answer from the retrieved evidence only.
+                </p>
+                <dl class="meta" id="generator-meta"></dl>
+              </div>
+            </div>
           </article>
         </li>
 
         <!-- 5 · Final answer -->
-        <li class="step" data-step="answer">
+        <li class="step" data-step="answer" data-state="waiting">
           <span class="step-marker" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
               <path d="m5 12.5 4.5 4.5L19 7.5" stroke-linecap="round" stroke-linejoin="round" />
@@ -203,17 +281,26 @@
           </span>
           <article class="card step-card answer-card">
             <header class="step-head">
-              <div class="step-title">
-                <span class="step-index">Step 5</span>
-                <h2>Final Answer</h2>
-              </div>
+              <button type="button" class="step-toggle" aria-expanded="true" aria-controls="step-body-answer">
+                <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="m8 10 4 4 4-4" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <span class="step-heading">
+                  <span class="step-eyebrow">Step 5</span>
+                  <h2 class="step-title">Final Answer</h2>
+                </span>
+              </button>
               <div class="head-actions">
                 <button type="button" class="btn-icon" id="copy-answer" hidden>Copy</button>
-                <span class="badge" data-badge="answer">Waiting</span>
+                <span class="badge" data-badge="answer" data-state="waiting"></span>
               </div>
             </header>
-            <div id="answer-body" class="answer-body"></div>
-            <dl class="meta" id="answer-meta"></dl>
+            <div class="step-body" id="step-body-answer">
+              <div class="step-body-inner">
+                <div id="answer-body" class="answer-body"></div>
+                <dl class="meta answer-metrics" id="answer-meta"></dl>
+              </div>
+            </div>
           </article>
         </li>
       </ol>

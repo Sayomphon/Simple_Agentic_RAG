@@ -179,12 +179,24 @@
     });
   }
 
-  /** Deterministic keyword retrieval over the bundled sections. */
-  function retrieve(query) {
-    var queryTerms = uniqueTerms(query, true);
-    if (!queryTerms.length) return [];
+  /**
+   * Deterministic keyword retrieval over the bundled sections.
+   * Returns snippets plus the scoring evidence the UI can surface
+   * (per-snippet score, best score, applied cutoff). retrieve() below
+   * keeps the original snippets-only contract.
+   */
+  function retrieveDetailed(query) {
+    var empty = {
+      snippets: [],
+      scores: [],
+      bestScore: 0,
+      cutoff: ABSOLUTE_CUTOFF
+    };
 
-    var candidates = SECTIONS.map(function (chunk, index) {
+    var queryTerms = uniqueTerms(query, true);
+    if (!queryTerms.length) return empty;
+
+    var scored = SECTIONS.map(function (chunk, index) {
       var split = chunk.indexOf("\n");
       var titleTerms = uniqueTerms(chunk.slice(0, split), false);
       var bodyTerms = uniqueTerms(chunk.slice(split + 1), false);
@@ -201,11 +213,23 @@
         matchCount: titleMatches.length + bodyMatches.length,
         score: titleMatches.length * TITLE_WEIGHT + bodyMatches.length * BODY_WEIGHT
       };
-    }).filter(function (candidate) {
+    });
+
+    var candidates = scored.filter(function (candidate) {
       return candidate.titleMatches.length > 0 || candidate.matchCount >= 2;
     });
 
-    if (!candidates.length) return [];
+    if (!candidates.length) {
+      // Nothing passed the structural filter — report the best raw score so
+      // the UI can say how close the nearest section came to the cutoff.
+      empty.bestScore = Math.max.apply(
+        null,
+        scored.map(function (candidate) {
+          return candidate.score;
+        }).concat([0])
+      );
+      return empty;
+    }
 
     var best = Math.max.apply(
       null,
@@ -235,13 +259,25 @@
       });
     }
 
-    return selected
-      .sort(function (a, b) {
-        return b.score - a.score || a.index - b.index;
-      })
-      .map(function (candidate) {
+    var ordered = selected.sort(function (a, b) {
+      return b.score - a.score || a.index - b.index;
+    });
+
+    return {
+      snippets: ordered.map(function (candidate) {
         return candidate.chunk;
-      });
+      }),
+      scores: ordered.map(function (candidate) {
+        return candidate.score;
+      }),
+      bestScore: best,
+      cutoff: cutoff
+    };
+  }
+
+  /** Original snippets-only contract, unchanged for existing callers. */
+  function retrieve(query) {
+    return retrieveDetailed(query).snippets;
   }
 
   function sectionTitle(chunk) {
@@ -269,7 +305,9 @@
 
   global.RAG_MOCK = {
     sections: SECTIONS,
+    topics: SECTIONS.map(sectionTitle),
     retrieve: retrieve,
+    retrieveDetailed: retrieveDetailed,
     report: report,
     sectionTitle: sectionTitle
   };

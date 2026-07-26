@@ -1,0 +1,309 @@
+/* ============================================================================
+   Simple Agentic RAG — Design Tokens (Phase 1 + Phase 2 component sizes)
+   ----------------------------------------------------------------------------
+   Scope   : single source of truth for color, type, spacing, shape, motion.
+   Stack   : dependency-free CSS custom properties (no build step, no webfonts).
+   Consumers: styles.css + any future component styles. Do NOT hardcode raw
+   hex/px values in component CSS — always reference a token from this file.
+
+   RATIONALE
+   Palette — one cool-gray neutral ramp (hue ≈ 220°, low chroma) carries all
+   surfaces, borders and text; reference look is Linear / Vercel dashboard /
+   LangSmith trace view: cards separate by border, not shadow; color is
+   reserved for STATUS ONLY. Seven semantic status tokens (success, running,
+   pending, warning, danger, info, accent) each define bg/border/fg/icon per
+   theme. "Received" maps to info (sky-blue) — deliberately NOT the green used
+   by "Completed", so a glance distinguishes "we got your query" from "this
+   step finished". "Waiting" is neutral gray: an idle step should not pull
+   attention. Every fg-on-bg pair below carries its MEASURED WCAG 2.1 contrast
+   ratio (L = light theme, D = dark theme); body-text pairs ≥ 4.5:1,
+   icons/large-text/interactive-borders ≥ 3:1. Verified by script — not
+   eyeballed.
+
+   Type scale — 6 roles on a 14px body. The old UI read "flat" because
+   overline/title/body were too close in size and weight; the new scale
+   separates them on three axes at once (size 11→20→14, weight 600→600→400,
+   tracking +0.08em→−0.012em→0) so hierarchy survives at arm's length.
+   UI font is the system stack (Inter-metric look on macOS via SF Pro);
+   "Inter" is listed first as a progressive enhancement if locally installed —
+   nothing is downloaded, keeping the demo dependency-free.
+
+   THEME MECHANISM
+   Tokens use light-dark(<light>, <dark>) — both values live on one line so
+   the pair is reviewable at a glance. `color-scheme` on :root decides which
+   side applies: `light dark` follows the OS; force a theme by setting
+   data-theme="light" | "dark" on <html>. (Baseline browser support since
+   mid-2024 — fine for a demo; if we ever need legacy support, mechanically
+   expand into duplicated theme blocks.)
+   ========================================================================== */
+
+:root {
+  color-scheme: light dark; /* follow OS preference by default */
+}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"]  { color-scheme: dark; }
+
+:root {
+
+  /* ==========================================================================
+     1. COLOR — PRIMITIVES
+     Neutral ramp 50→950. Theme-invariant raw values; components should
+     normally consume the semantic aliases in section 2, not these.
+     ======================================================================= */
+
+  --neutral-50:  #F8F9FB;  /* light: page background */
+  --neutral-100: #F1F3F6;  /* light: nested surface, pending-bg */
+  --neutral-200: #E4E7EC;  /* light: hairline border */
+  --neutral-300: #D2D6DE;  /* light: pending border */
+  --neutral-400: #A8B0BF;  /* dark: secondary text */
+  --neutral-500: #848FA3;  /* light: strong border · dark: tertiary text */
+  --neutral-600: #5F6A7D;  /* light: tertiary text · dark: strong border */
+  --neutral-700: #525C6E;  /* light: secondary text */
+  --neutral-800: #2A303C;  /* dark: hairline border */
+  --neutral-850: #1D222B;  /* dark: nested surface, pending-bg */
+  --neutral-900: #161A21;  /* dark: card surface · light: primary text */
+  --neutral-950: #0F1116;  /* dark: page background */
+
+  /* ==========================================================================
+     2. COLOR — SEMANTIC ALIASES  (light-dark(<light>, <dark>))
+     ======================================================================= */
+
+  /* --- Surfaces --------------------------------------------------------- */
+  --color-bg-page:   light-dark(var(--neutral-50),  var(--neutral-950));
+  --color-surface:   light-dark(#FFFFFF,            var(--neutral-900)); /* cards, panels */
+  --color-surface-2: light-dark(var(--neutral-100), var(--neutral-850)); /* nested: timeline rows, code wells */
+
+  /* --- Text (on surface) ------------------------------------------------ */
+  /* text-primary   L 17.35:1 · D 14.74:1  (vs surface; ≥13.48:1 on every surface) */
+  /* text-secondary L  6.74:1 · D  8.04:1 */
+  /* text-tertiary  L  5.46:1 · D  5.65:1  — smallest text still AA body */
+  --color-text-primary:   light-dark(var(--neutral-900), #E9ECF2);
+  --color-text-secondary: light-dark(var(--neutral-700), var(--neutral-400));
+  --color-text-tertiary:  light-dark(var(--neutral-600), var(--neutral-500));
+
+  /* --- Borders ----------------------------------------------------------- */
+  /* border-subtle: decorative card hairline — intentionally below 3:1; never
+     the sole affordance for an interactive element. */
+  --color-border-subtle: light-dark(var(--neutral-200), var(--neutral-800));
+  /* border-strong: interactive/input borders — L 3.26:1 · D 3.20:1 vs surface (≥3:1 non-text) */
+  --color-border-strong: light-dark(var(--neutral-500), var(--neutral-600));
+
+  /* --- Interactive accent (solid) ---------------------------------------- */
+  /* on-accent text: L 5.21:1 · D 5.99:1 (≥4.5:1) — primary button */
+  --color-accent-solid:    light-dark(#3D63DD, #5B8CFF);
+  --color-on-accent-solid: light-dark(#FFFFFF, #0B1020);
+  /* focus ring vs surface: L 5.21:1 · D 4.44:1 (≥3:1 non-text) */
+  --color-focus-ring:      var(--color-accent-solid);
+
+  /* --------------------------------------------------------------------------
+     STATUS TOKENS — each has bg / border / fg / icon per theme.
+
+     App-status mapping (single source of truth — keep app.js states in sync):
+       Received                    → info      (sky; NOT the Completed green)
+       Running                     → running   (indigo, pairs with spinner)
+       Waiting            (pending)→ pending   (neutral; idle must stay quiet)
+       Completed              (done)→ success  (green)
+       No evidence found / Not found→ warning  (amber; degraded, not failed)
+       Failed                (error)→ danger   (red)
+       (interactive/brand)          → accent   (blue — buttons, links, focus)
+
+     Measured ratios per token: fg-on-bg ≥4.5:1 · icon-on-bg ≥3:1 · fg is also
+     AA as tinted text directly on --color-surface.
+     ----------------------------------------------------------------------- */
+
+  /* success — Completed · fg/bg L 5.81 D 9.52 · icon/bg L 4.75 D 6.54 · fg/surface L 6.57 D 10.88 */
+  --color-success-bg:     light-dark(#E4F5EC, #122A1E);
+  --color-success-border: light-dark(#A5DFC1, #20503A);
+  --color-success-fg:     light-dark(#0E6B40, #7BE0AC);
+  --color-success-icon:   light-dark(#137A4B, #3FBF83);
+
+  /* running — Running · fg/bg L 6.73 D 8.23 · icon/bg L 5.11 D 5.36 · fg/surface L 7.70 D 9.21 */
+  --color-running-bg:     light-dark(#ECEFFE, #1B2144);
+  --color-running-border: light-dark(#C0CBF8, #35407E);
+  --color-running-fg:     light-dark(#3743C0, #ADB9F9);
+  --color-running-icon:   light-dark(#4A56D6, #8290F2);
+
+  /* pending — Waiting · fg/bg L 6.06 D 7.35 · icon/bg L 4.91 D 4.66 · fg/surface L 6.74 D 8.04 */
+  --color-pending-bg:     light-dark(var(--neutral-100), var(--neutral-850));
+  --color-pending-border: light-dark(var(--neutral-300), #3A414F);
+  --color-pending-fg:     light-dark(var(--neutral-700), var(--neutral-400));
+  --color-pending-icon:   light-dark(var(--neutral-600), var(--neutral-500));
+
+  /* warning — No evidence found / Not found · fg/bg L 6.36 D 8.83 · icon/bg L 5.07 D 6.11 · fg/surface L 7.08 D 9.96 */
+  --color-warning-bg:     light-dark(#FBF2DE, #2D230D);
+  --color-warning-border: light-dark(#EDD293, #5A461C);
+  --color-warning-fg:     light-dark(#77510A, #EABE55);
+  --color-warning-icon:   light-dark(#8A5F00, #CE9A36);
+
+  /* danger — Failed · fg/bg L 5.73 D 7.91 · icon/bg L 4.80 D 5.39 · fg/surface L 6.54 D 8.57 */
+  --color-danger-bg:      light-dark(#FDECEC, #331A1B);
+  --color-danger-border:  light-dark(#F4BEBE, #5F2C2E);
+  --color-danger-fg:      light-dark(#B02A2A, #F2A0A0);
+  --color-danger-icon:    light-dark(#C13535, #E57373);
+
+  /* info — Received · fg/bg L 6.04 D 8.02 · icon/bg L 4.92 D 5.90 · fg/surface L 6.83 D 8.88 */
+  --color-info-bg:        light-dark(#E6F3FB, #0E2534);
+  --color-info-border:    light-dark(#ACD9F2, #1E475E);
+  --color-info-fg:        light-dark(#085F94, #6FC3EC);
+  --color-info-icon:      light-dark(#0A6DA9, #41A8DD);
+
+  /* accent — brand/interactive tint · fg/bg L 5.92 D 7.91 · icon/bg L 5.01 D 5.73 · fg/surface L 6.82 D 8.81 */
+  --color-accent-bg:      light-dark(#E9EFFE, #182240);
+  --color-accent-border:  light-dark(#BDD0FB, #2E4070);
+  --color-accent-fg:      light-dark(#2551C7, #9BB7FF);
+  --color-accent-icon:    light-dark(#2E5CD8, #7099FF);
+
+  /* ==========================================================================
+     3. TYPOGRAPHY
+     One UI font, one mono font, both system-resolved (no webfont download).
+     ======================================================================= */
+
+  --font-ui:   "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+               Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", SFMono-Regular,
+               "Cascadia Code", Menlo, Consolas, monospace;
+
+  /* Role      | size / line-height | weight | tracking
+     overline  — eyebrow labels: "STEP 2 · AGENT" (uppercase at point of use) */
+  --type-overline-size:    11px;
+  --type-overline-line:    16px;
+  --type-overline-weight:  600;
+  --type-overline-tracking: 0.08em;
+
+  /* title — card/section headings: "data_retriever", panel headers */
+  --type-title-size:    20px;
+  --type-title-line:    26px;
+  --type-title-weight:  600;
+  --type-title-tracking: -0.012em;
+
+  /* body — default UI text, answer prose */
+  --type-body-size:    14px;
+  --type-body-line:    22px;
+  --type-body-weight:  400;
+  --type-body-tracking: 0;
+
+  /* body-sm — dense secondary copy: citations, timeline entries */
+  --type-body-sm-size:    13px;
+  --type-body-sm-line:    20px;
+  --type-body-sm-weight:  400;
+  --type-body-sm-tracking: 0;
+
+  /* caption — meta bar, timestamps, counters; 500 weight keeps 12px legible */
+  --type-caption-size:    12px;
+  --type-caption-line:    16px;
+  --type-caption-weight:  500;
+  --type-caption-tracking: 0.015em;
+
+  /* mono — node ids, latency figures, payload/code wells */
+  --type-mono-size:    13px;
+  --type-mono-line:    20px;
+  --type-mono-weight:  400;
+  --type-mono-tracking: 0;
+
+  /* Vertical rhythm inside a card header — the fix for the "flat" hierarchy:
+     overline sits tight against its title (grouping), body is pushed away
+     (separation). Use as margin-bottom on overline / title respectively. */
+  --stack-overline-to-title: 4px;
+  --stack-title-to-body:     12px;
+
+  /* ==========================================================================
+     4. SPACING & SHAPE
+     ======================================================================= */
+
+  /* 4px base scale */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Radius — sm: inputs, buttons, inline code wells
+              md: workflow cards, panels (matches current 10px look)
+              lg: modals, page-level containers
+              full: status pills, dots, avatars */
+  --radius-sm:   6px;
+  --radius-md:   10px;
+  --radius-lg:   14px;
+  --radius-full: 9999px;
+
+  /* Elevation — max two levels. Cards separate by --color-border-subtle,
+     NOT by shadow. Shadows are reserved for things that float:
+       raised  → dropdowns, popovers, tooltips
+       overlay → modals, command palette */
+  --shadow-raised:  0 1px 2px light-dark(rgb(22 26 33 / 0.06), rgb(0 0 0 / 0.30)),
+                    0 2px 8px light-dark(rgb(22 26 33 / 0.05), rgb(0 0 0 / 0.25));
+  --shadow-overlay: 0 4px 16px light-dark(rgb(22 26 33 / 0.10), rgb(0 0 0 / 0.45)),
+                    0 12px 40px light-dark(rgb(22 26 33 / 0.13), rgb(0 0 0 / 0.40));
+
+  /* ==========================================================================
+     5. MOTION
+     fast  → hover states, pill state changes
+     base  → panel expand/collapse, fades
+     slow  → timeline reveal, cross-view transitions
+     Components must animate via these tokens only — that is what makes the
+     reduced-motion override below a guaranteed no-op path.
+     ======================================================================= */
+
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);   /* most transitions */
+  --ease-enter:    cubic-bezier(0.1, 0, 0, 1);   /* elements appearing */
+  --ease-exit:     cubic-bezier(0.3, 0, 1, 1);   /* elements leaving */
+
+  /* ==========================================================================
+     6. COMPONENT SIZES  (added in Phase 2)
+     Structural constants so component CSS never hardcodes a visible value.
+     Responsive tokens (rail/marker) change value at the 768px breakpoint in
+     the media block at the bottom of this file — component CSS just consumes
+     them and never branches on viewport for sizes itself.
+     ======================================================================= */
+
+  --size-content-max: 880px;  /* page column */
+  --size-rail-col:    24px;   /* timeline rail gutter (narrow on mobile) */
+  --size-marker:      22px;   /* rail node diameter */
+  --size-rail-line:   2px;    /* connector thickness */
+  --size-collapse-max: 240px; /* clamp height for long card bodies; the
+                                 evidence skeleton reserves this same height,
+                                 so skeleton → loaded causes no layout shift */
+  --size-answer-reserve: 96px;/* min-height of the answer body in BOTH
+                                 skeleton and loaded states (no shift) */
+  --size-skeleton-line: 14px;
+  --size-fade-x: 40px;        /* right-edge fade on horizontally scrolling mono */
+  --size-fade-y: 56px;        /* bottom fade on collapsed card bodies */
+  --size-icon:    16px;
+  --size-icon-sm: 12px;       /* badge glyphs */
+  --size-compactbar-h: 48px;  /* sticky compact query bar */
+
+  --border-w:     1px;
+  --focus-w:      2px;        /* focus ring — pair with --color-focus-ring */
+  --focus-offset: 2px;
+
+  --z-sticky: 20;             /* compact query bar */
+}
+
+/* Responsive size tokens — the ONLY place viewport changes a token value.
+   ≥768px: rail widens from a narrow mobile gutter to the full column. */
+@media (min-width: 768px) {
+  :root {
+    --size-rail-col: 40px;
+    --size-marker:   30px;
+  }
+}
+
+/* Reduced motion: collapse every duration to a near-zero value (0.01ms rather
+   than 0 so transitionend/animationend still fire for JS listeners). Any
+   animation built on the tokens above becomes an instant state change. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0.01ms;
+    --duration-base: 0.01ms;
+    --duration-slow: 0.01ms;
+  }
+}
