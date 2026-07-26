@@ -1,0 +1,142 @@
+[
+  {
+    "id": "ho_days_off_per_year",
+    "category": "unseen_paraphrase",
+    "query": "How many days off do I get each year?",
+    "expected_titles": [
+      "--- Annual Leave ---"
+    ],
+    "forbidden_titles": [
+      "--- Remote Work Policy ---"
+    ]
+  },
+  {
+    "id": "ho_hotel_budget_abroad",
+    "category": "unseen_paraphrase",
+    "query": "What is the per night hotel budget for trips abroad?",
+    "expected_titles": [
+      "--- International Travel Daily Allowance ---"
+    ],
+    "forbidden_titles": [
+      "--- Expense Reimbursement ---"
+    ]
+  },
+  {
+    "id": "ho_reply_speed_incident",
+    "category": "unseen_paraphrase",
+    "query": "How fast do you reply to a production incident?",
+    "expected_titles": [
+      "--- Customer Support Service Levels ---"
+    ],
+    "forbidden_titles": []
+  },
+  {
+    "id": "ho_trip_expense_claims",
+    "category": "unseen_paraphrase",
+    "query": "How do I claim trip expenses?",
+    "expected_titles": [
+      "--- Expense Reimbursement ---",
+      "--- International Travel Daily Allowance ---"
+    ],
+    "forbidden_titles": [
+      "--- PaySiam Gateway Product Overview ---"
+    ]
+  },
+  {
+    "id": "ho_reimbursing_flights",
+    "category": "unseen_inflection",
+    "query": "reimbursing flights",
+    "expected_titles": [
+      "--- Expense Reimbursement ---"
+    ],
+    "forbidden_titles": [
+      "--- PaySiam Gateway Product Overview ---"
+    ]
+  },
+  {
+    "id": "ho_escalated_tickets",
+    "category": "unseen_inflection",
+    "query": "escalated tickets",
+    "expected_titles": [
+      "--- Support Escalation Process ---"
+    ],
+    "forbidden_titles": []
+  },
+  {
+    "id": "ho_card_rates",
+    "category": "cross_domain_precision",
+    "query": "card processing rates",
+    "expected_titles": [
+      "--- PaySiam Gateway Product Overview ---"
+    ],
+    "forbidden_titles": [
+      "--- International Travel Approval Process ---",
+      "--- International Travel Daily Allowance ---",
+      "--- International Travel Insurance ---"
+    ]
+  },
+  {
+    "id": "ho_insurance_coverage_limits",
+    "category": "cross_domain_precision",
+    "query": "insurance coverage limits",
+    "expected_titles": [
+      "--- International Travel Insurance ---"
+    ],
+    "forbidden_titles": [
+      "--- PaySiam Gateway Product Overview ---"
+    ]
+  },
+  {
+    "id": "ho_approves_long_trips",
+    "category": "cross_domain_precision",
+    "query": "Who approves long trips?",
+    "expected_titles": [
+      "--- International Travel Approval Process ---"
+    ],
+    "forbidden_titles": [
+      "--- Expense Reimbursement ---",
+      "--- Remote Work Policy ---"
+    ]
+  },
+  {
+    "id": "ho_wfh_and_anchor_days",
+    "category": "multi_section_recall",
+    "query": "rules for working from home and anchor days",
+    "expected_titles": [
+      "--- Remote Work Policy ---",
+      "--- Hybrid Work Guidelines ---"
+    ],
+    "forbidden_titles": []
+  },
+  {
+    "id": "ho_p1_response_and_escalation",
+    "category": "multi_section_recall",
+    "query": "P1 outage first response and escalation steps",
+    "expected_titles": [
+      "--- Customer Support Service Levels ---",
+      "--- Support Escalation Process ---"
+    ],
+    "forbidden_titles": []
+  },
+  {
+    "id": "ho_parental_leave",
+    "category": "negative",
+    "query": "What is the company's parental leave policy?",
+    "expected_titles": [],
+    "forbidden_titles": []
+  },
+  {
+    "id": "ho_vpn_password_reset",
+    "category": "negative",
+    "query": "How do I reset my TigerLink VPN password?",
+    "expected_titles": [],
+    "forbidden_titles": []
+  },
+  {
+    "id": "ho_office_parking",
+    "category": "negative",
+    "query": "What are the office parking rules?",
+    "expected_titles": [],
+    "forbidden_titles": []
+  }
+]
