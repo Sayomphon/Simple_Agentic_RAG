@@ -7,7 +7,7 @@
 
 ![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/Orchestration-LangGraph-1C3C3C)
-![Tests](https://img.shields.io/badge/tests-137%20passing%20%7C%205%20live%20skipped-brightgreen)
+![Tests](https://img.shields.io/badge/tests-147%20passing%20%7C%205%20live%20skipped-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 This repository is a deliberately small implementation of the
@@ -65,7 +65,8 @@ audit.
   report remains the source of truth.
 - **Measured quality:** retrieval and answer quality are numbers produced
   by runners in this repository, reported for both a calibration set and a
-  held-out set (see [Evaluation](#evaluation)).
+  held-out set. Answer cases also have evaluation-only, claim-level
+  faithfulness and relevance scores (see [Evaluation](#evaluation)).
 - **Resilient CLI boundary:** one failed interactive query is reported safely
   without ending the session.
 - **Inspectable web UI:** a dependency-free single-page front end renders the
@@ -302,6 +303,8 @@ summarize, enrich, rerank, or rewrite the evidence.
 │   │   ├── dataset.py            # shared fixture loader
 │   │   ├── metrics.py            # pure set-based retrieval metrics
 │   │   ├── ablation.py           # V0..V5 scoring-layer ladder
+│   │   ├── judges.py             # structured faithfulness/relevance judges
+│   │   ├── judge_reporting.py    # pure judged-metric Markdown rendering
 │   │   ├── run_retrieval_eval.py # lexical + semantic + hybrid evaluation
 │   │   └── run_answer_eval.py    # opt-in live answer eval runner
 │   ├── retrievers/
@@ -323,6 +326,7 @@ summarize, enrich, rerank, or rewrite the evidence.
 │   ├── test_retrievers.py        # semantic, hybrid, cache, and factory tests
 │   ├── test_retrieval.py         # retrieval, stemming, and cache tests
 │   ├── test_evaluation.py        # dataset loader and metric tests
+│   ├── test_answer_judge.py      # offline judge schema/retry/error tests
 │   ├── test_graph.py             # agent behavior and graph handoff
 │   ├── test_live_e2e.py          # opt-in real provider integration
 │   ├── test_telemetry.py         # score/provenance/latency isolation tests
@@ -374,6 +378,7 @@ LLM_TIMEOUT_SECONDS=30
 LLM_MAX_RETRIES=2
 RUN_LIVE_LLM_TESTS=0
 LIVE_LLM_TEST_MODEL=gpt-5-mini
+JUDGE_MODEL_NAME=gpt-5-mini
 ```
 
 | Variable | Required | Default | Description |
@@ -382,6 +387,7 @@ LIVE_LLM_TEST_MODEL=gpt-5-mini
 | `MODEL_NAME` | No | `gpt-5-mini` | Chat model used by both agents |
 | `RETRIEVER_MODEL_NAME` | No | `MODEL_NAME` | Optional override for the Data Retriever only |
 | `REPORTER_MODEL_NAME` | No | `MODEL_NAME` | Optional override for the Report Generator only |
+| `JUDGE_MODEL_NAME` | No | `MODEL_NAME` | Evaluation-only model for faithfulness and relevance; never added to the runtime graph |
 | `TEMPERATURE` | No | `0` | Used for models that support a custom temperature |
 | `LLM_TIMEOUT_SECONDS` | No | `30` | Per-request provider timeout so the CLI cannot hang |
 | `LLM_MAX_RETRIES` | No | `2` | Bounded retry budget for transient provider errors |
@@ -473,7 +479,7 @@ Run the complete default suite:
 python -m unittest discover -v
 ```
 
-The default run discovers **142 tests**: **137 pass offline** and the **5 live
+The default run discovers **152 tests**: **147 pass offline** and the **5 live
 tests are skipped**. It covers:
 
 - knowledge-base loading, section splitting, and parse-cache invalidation;
@@ -501,6 +507,9 @@ tests are skipped**. It covers:
   non-empty sub-queries) and the baseline-union superset guarantee;
 - query validation (empty / whitespace / over-length) with no LLM call;
 - per-role LLM construction, timeout, and retry wiring;
+- strict structured-output judge schemas, application validation, bounded
+  parse retry, input limits, prompt-injection boundaries, and safe independent
+  `judge_error` handling;
 - citation validation, evidence-block wrapping, and injection-guard prompt
   structure;
 - malformed knowledge-base rejection;
@@ -679,21 +688,25 @@ configuration. The measurement and reasoning are recorded in
 
 ### Answer-level results
 
-All axes are scored by deterministic matching — no LLM judge, no reference
-answers. The generator output itself is probabilistic: results below were
-produced with `gpt-5-mini` for both agents, prompt version `b1f51dc`
-(commit), and 1 run per case over all 57 labeled queries.
+The live runner keeps the eight deterministic axes as release gates and adds
+two evaluation-only soft metrics. The judged axes use strict JSON Schema
+outputs, application validation, bounded parse retry, and independent
+`judge_error` reporting. The run below used `gpt-5-mini` for both agents and
+the single judge, judge prompt `phase4-v1`, prompt commit `68d0837`, and one
+run per case over all 57 labeled queries.
 
-| axis | result | threshold |
-|---|---|---|
-| citation validity (runtime-enforced) | 100.0% (57/57) | 100% |
-| not-found discipline | 100.0% (10/10) | 100% |
-| evidence provenance | 100.0% (57/57) | 100% |
-| no LLM call on empty retrieval | 100.0% (7/7) | 100% |
-| baseline coverage | 100.0% (57/57) | 100% |
-| required-fact coverage | 100.0% (18/18) | 100% |
-| unsupported-number rate | 0.0% (0/31) | 0% |
-| forbidden-fact violations | 0 | 0 |
+| axis | method | result | threshold |
+|---|---|---|---|
+| citation validity (runtime-enforced) | deterministic | 100.0% (57/57) | 100% |
+| not-found discipline | deterministic | 100.0% (10/10) | 100% |
+| evidence provenance | deterministic | 100.0% (57/57) | 100% |
+| no LLM call on empty retrieval | deterministic | 100.0% (7/7) | 100% |
+| baseline coverage | deterministic | 100.0% (57/57) | 100% |
+| required-fact coverage | deterministic | 100.0% (18/18) | 100% |
+| unsupported-number rate | deterministic | 0.0% (0/26) | 0% |
+| forbidden-fact violations | deterministic | 0 | 0 |
+| faithfulness | single LLM judge, claim-level | 1.000 (43/43 claims; 16 cases; errors: 0) | ≥ 0.900 (soft) |
+| answer relevance | single LLM judge, 1–5 | 5.00/5.00 (16 cases; errors: 0) | ≥ 4.00 (soft) |
 
 Full per-variant tables, per-case mismatches, and run metadata are in
 [evaluation_results.md](evaluation_results.md) and
@@ -705,8 +718,9 @@ points. The English and Thai held-out sets are written by the same author as
 the knowledge base. Hard negatives are used for calibration and must not be
 presented as generalization evidence. Hosted embedding scores can vary
 slightly between live runs. The Thai translation sub-query and answer metrics
-come from one run per case of a probabilistic model. No LLM-as-judge axis is
-reported — semantic faithfulness beyond citation validity is not measured.
+come from one run per case of a probabilistic model. The judged axes use the
+same single model for one run with no ensemble or human calibration, so they
+inherit its strictness and must not be treated as deterministic CI gates.
 
 ## Example results
 
@@ -834,6 +848,13 @@ no-evidence guard and its measurable contract for every language.
 to compare the Generator's input directly with `knowledge_base.txt`. This
 separates retrieval quality from answer-generation quality.
 
+**Why the LLM judge is evaluation-only.** Claim-level faithfulness and
+relevance help investigate semantic defects that deterministic matching may
+miss, but one model run is not a safe runtime authorization or release
+decision. The judge remains outside LangGraph, receives only the query,
+handed-off snippets, and final answer, and reports soft metrics with explicit
+model/prompt provenance and independent `judge_error` handling.
+
 **Why short-circuit empty evidence.** When `snippets` is empty, there is nothing
 safe to synthesize. Returning a fixed sentence without an LLM call reduces
 hallucination risk, latency, and API cost.
@@ -885,9 +906,10 @@ not production scale.
   approved data egress, an API key, provider quota, and roughly 0.5 seconds
   per query embedding in the recorded run. They fail loudly and never fall
   back silently to lexical.
-- **Citation-level grounding only:** invented citations fail loudly at
-  runtime and the answer eval checks facts and numbers against the handed-off
-  evidence, but there is no per-claim semantic faithfulness check.
+- **Single-judge faithfulness:** invented citations still fail loudly at
+  runtime, while the evaluation-only judge measures claim support and
+  relevance. The result is one model's judgment from one run, not a
+  deterministic runtime guard or a substitute for human-calibrated evals.
 - **No service layer:** the pipeline runs in-process behind the CLI. There is no
   HTTP API, authentication, persistence, monitoring, or rate-limit handling.
 - **Mock-first web UI:** because no service exists yet, the front end ships with
@@ -902,8 +924,9 @@ not production scale.
 
 A production evolution would add document ingestion and lifecycle management,
 a larger labeled retrieval dataset, hybrid lexical/vector retrieval, metadata
-filters and access control, answer faithfulness checks, tracing, cost and
-latency monitoring, provider error handling, and a deployable API layer.
+filters and access control, human-calibrated or multi-judge answer evaluation,
+tracing, cost and latency monitoring, provider error handling, and a
+deployable API layer.
 
 ## License
 

@@ -3,13 +3,11 @@
 Usage:
     RUN_LIVE_LLM_TESTS=1 python -m src.evaluation.run_answer_eval
 
-Runs every labeled query (answer cases + original calibration/held-out fixtures)
-through the real graph once and scores the deterministic guardrail and
-answer-quality axes (citations, not-found discipline, provenance,
-baseline coverage, facts, and numbers). The metrics are computed
-deterministically, but the generator output is probabilistic — the
-report header therefore always names the models, prompt version
-(commit), and runs per case. Writes answer_eval_results.md.
+Runs every labeled query (answer cases + original calibration/held-out
+fixtures) through the real graph once and scores deterministic guardrail and
+answer-quality axes. It also judges the answer cases for claim-level
+faithfulness and answer relevance. Judged axes are reported soft metrics, not
+CI gates. The report always records model and prompt provenance.
 """
 
 from __future__ import annotations
@@ -21,6 +19,16 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from src.evaluation.judges import (
+    JUDGE_PROMPT_VERSION,
+    AnswerJudgment,
+)
+from src.evaluation.judge_reporting import (
+    faithfulness_result,
+    judged_detail_lines,
+    relevance_result,
+)
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RESULTS_PATH = _PROJECT_ROOT / "answer_eval_results.md"
@@ -40,6 +48,7 @@ class QueryRecord:
     llm_calls: int = 0
     error: str | None = None
     failures: list[str] = field(default_factory=list)
+    judgment: AnswerJudgment | None = None
 
 
 def _normalize(text: str) -> str:
@@ -90,14 +99,20 @@ def main() -> int:
     # provider credentials available at import time.
     from langchain_core.callbacks import BaseCallbackHandler
 
+    from src.agents import get_llm
     from src.agents.reporter import (
         _CITATION_PATTERN,
         _SNIPPET_TITLE_PATTERN,
         _normalize_title,
         NOT_FOUND_SENTENCE,
     )
-    from src.config import REPORTER_MODEL_NAME, RETRIEVER_MODEL_NAME
+    from src.config import (
+        MODEL_NAME,
+        REPORTER_MODEL_NAME,
+        RETRIEVER_MODEL_NAME,
+    )
     from src.evaluation.dataset import load_cases
+    from src.evaluation.judges import AnswerJudge
     from src.graph import build_graph
     from src.tools.retrieval import load_knowledge_base, search
 
@@ -121,6 +136,9 @@ def main() -> int:
 
     corpus_chunks = set(load_knowledge_base())
     graph = build_graph()
+    judge_model_name = (
+        os.getenv("JUDGE_MODEL_NAME") or MODEL_NAME
+    ).strip()
 
     records: list[QueryRecord] = []
     deep_records: list[tuple[dict[str, object], QueryRecord]] = []
@@ -237,6 +255,37 @@ def main() -> int:
                 )
                 record.failures.append(f"forbidden_fact:{fact}")
 
+    # --- Soft LLM-as-judge metrics over answer cases only. ---------------
+    deep_answer_records = [record for _, record in deep_records]
+    try:
+        judge = AnswerJudge.from_chat_model(get_llm(judge_model_name))
+    except Exception as exc:  # noqa: BLE001 - report setup failure safely.
+        setup_error = type(exc).__name__
+        for record in deep_answer_records:
+            if record.error is None:
+                record.judgment = AnswerJudgment(
+                    faithfulness=None,
+                    relevance=None,
+                    faithfulness_error=setup_error,
+                    relevance_error=setup_error,
+                )
+    else:
+        judgeable = [
+            record
+            for record in deep_answer_records
+            if record.error is None
+        ]
+        for position, record in enumerate(judgeable, start=1):
+            print(
+                f"[judge {position}/{len(judgeable)}] {record.case_id}",
+                file=sys.stderr,
+            )
+            record.judgment = judge.evaluate(
+                record.query,
+                record.snippets,
+                record.report,
+            )
+
     # --- Report. ---------------------------------------------------------
     errored = [record for record in records if record.error is not None]
     lines = [
@@ -251,6 +300,8 @@ def main() -> int:
         "",
         f"- Retriever model: `{RETRIEVER_MODEL_NAME}`",
         f"- Reporter model: `{REPORTER_MODEL_NAME}`",
+        f"- Judge model: `{judge_model_name}`",
+        f"- Judge prompt version: `{JUDGE_PROMPT_VERSION}`",
         f"- Prompt version (commit): `{_git_commit()}`",
         "- Runs per case: 1",
         f"- Queries executed: {len(executed)}/{len(records)} "
@@ -258,29 +309,41 @@ def main() -> int:
         f"{len(retrieval_cases)} retrieval-fixture cases; "
         f"errors: {len(errored)})",
         "",
-        "| axis | result | threshold |",
-        "|---|---|---|",
-        f"| citation_validity (runtime-enforced) | "
+        "Deterministic axes remain release gates. LLM-judged axes are "
+        "**reported soft metrics only**: one judge, no ensemble, one run, "
+        "and scores inherit the judge model's strictness.",
+        "",
+        "| axis | method | result | threshold |",
+        "|---|---|---|---|",
+        f"| citation_validity (runtime-enforced) | deterministic | "
         f"{_percent(citation_ok, len(executed))} | 100% |",
         f"| not_found_discipline | "
-        f"{_percent(not_found_ok, not_found_expected)} | 100% |",
-        f"| evidence_provenance | "
+        f"deterministic | {_percent(not_found_ok, not_found_expected)} | "
+        "100% |",
+        f"| evidence_provenance | deterministic | "
         f"{_percent(provenance_ok, len(executed))} | 100% |",
-        f"| no_llm_on_empty | "
+        f"| no_llm_on_empty | deterministic | "
         f"{_percent(empty_retrieval_ok, empty_retrieval)} | 100% |",
-        f"| baseline_coverage | "
+        f"| baseline_coverage | deterministic | "
         f"{_percent(coverage_ok, len(executed))} | 100% |",
-        f"| required_fact_coverage | "
+        f"| required_fact_coverage | deterministic | "
         f"{_percent(required_found, required_total)} | 100% |",
-        f"| unsupported_number_rate | "
+        f"| unsupported_number_rate | deterministic | "
         f"{_percent(numbers_unsupported, numbers_total)} | 0% |",
-        f"| forbidden_fact_violations | {len(forbidden_violations)} | 0 |",
+        f"| forbidden_fact_violations | deterministic | "
+        f"{len(forbidden_violations)} | 0 |",
+        f"| faithfulness | single LLM judge, claim-level | "
+        f"{faithfulness_result(deep_answer_records)} | ≥ 0.900 (soft) |",
+        f"| answer_relevance | single LLM judge, 1–5 | "
+        f"{relevance_result(deep_answer_records)} | ≥ 4.00 (soft) |",
         "",
     ]
 
+    lines += judged_detail_lines(deep_answer_records)
+
     imperfect = [record for record in records if record.failures or record.error]
     if imperfect:
-        lines += ["## Imperfect cases", ""]
+        lines += ["## Deterministic imperfect cases", ""]
         for record in imperfect:
             details = record.error or ", ".join(record.failures)
             lines.append(f"- `{record.case_id}` — {details}")
@@ -289,7 +352,7 @@ def main() -> int:
                 lines.append(f"  - report: {record.report!r}")
         lines.append("")
     else:
-        lines += ["Every case passed every axis.", ""]
+        lines += ["Every case passed every deterministic axis.", ""]
 
     RESULTS_PATH.write_text(
         "\n".join(lines).rstrip() + "\n",

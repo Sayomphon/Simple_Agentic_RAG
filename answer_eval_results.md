@@ -6,19 +6,69 @@ Metrics are computed by deterministic matching, but the generator output itself 
 
 - Retriever model: `gpt-5-mini`
 - Reporter model: `gpt-5-mini`
-- Prompt version (commit): `b1f51dc`
+- Judge model: `gpt-5-mini`
+- Judge prompt version: `phase4-v1`
+- Prompt version (commit): `68d0837`
 - Runs per case: 1
 - Queries executed: 57/57 (16 answer cases, 41 retrieval-fixture cases; errors: 0)
 
-| axis | result | threshold |
-|---|---|---|
-| citation_validity (runtime-enforced) | 100.0% (57/57) | 100% |
-| not_found_discipline | 100.0% (10/10) | 100% |
-| evidence_provenance | 100.0% (57/57) | 100% |
-| no_llm_on_empty | 100.0% (7/7) | 100% |
-| baseline_coverage | 100.0% (57/57) | 100% |
-| required_fact_coverage | 100.0% (18/18) | 100% |
-| unsupported_number_rate | 0.0% (0/31) | 0% |
-| forbidden_fact_violations | 0 | 0 |
+Deterministic axes remain release gates. LLM-judged axes are **reported soft metrics only**: one judge, no ensemble, one run, and scores inherit the judge model's strictness.
 
-Every case passed every axis.
+| axis | method | result | threshold |
+|---|---|---|---|
+| citation_validity (runtime-enforced) | deterministic | 100.0% (57/57) | 100% |
+| not_found_discipline | deterministic | 100.0% (10/10) | 100% |
+| evidence_provenance | deterministic | 100.0% (57/57) | 100% |
+| no_llm_on_empty | deterministic | 100.0% (7/7) | 100% |
+| baseline_coverage | deterministic | 100.0% (57/57) | 100% |
+| required_fact_coverage | deterministic | 100.0% (18/18) | 100% |
+| unsupported_number_rate | deterministic | 0.0% (0/26) | 0% |
+| forbidden_fact_violations | deterministic | 0 | 0 |
+| faithfulness | single LLM judge, claim-level | 1.000 (43/43 claims; 16 cases; errors: 0) | ≥ 0.900 (soft) |
+| answer_relevance | single LLM judge, 1–5 | 5.00/5.00 (16 cases; errors: 0) | ≥ 4.00 (soft) |
+
+## LLM-as-judge case details
+
+| case | faithfulness | relevance | status |
+|---|---:|---:|---|
+| `ans_intl_daily_allowance` | 1.000 | 5/5 | ok |
+| `ans_hotel_caps` | 1.000 | 5/5 | ok |
+| `ans_annual_leave_days` | 1.000 | 5/5 | ok |
+| `ans_remote_days` | 1.000 | 5/5 | ok |
+| `ans_paysiam_fees` | 1.000 | 5/5 | ok |
+| `ans_p1_first_response` | 1.000 | 5/5 | ok |
+| `ans_insurance_medical` | 1.000 | 5/5 | ok |
+| `ans_expense_deadline` | 1.000 | 5/5 | ok |
+| `ans_multi_intent_allowance_p1` | 1.000 | 5/5 | ok |
+| `ans_nf_ceo_salary` | 1.000 | 5/5 | ok |
+| `ans_nf_parental_leave` | 1.000 | 5/5 | ok |
+| `ans_nf_office_wifi` | 1.000 | 5/5 | ok |
+| `ans_th_travel_approval_system` | 1.000 | 5/5 | ok |
+| `ans_th_daily_allowance` | 1.000 | 5/5 | ok |
+| `ans_th_paysiam_international_fee` | 1.000 | 5/5 | ok |
+| `ans_th_nf_maternity_leave` | 1.000 | 5/5 | ok |
+
+### Relevance reasons
+
+- `ans_intl_daily_allowance` (5/5) — Directly answers the question with the full daily rate (2,400 THB) and notes the departure/return half-rate (1,200 THB), matching the provided evidence.
+- `ans_hotel_caps` (5/5) — Directly and completely answers the question using the provided evidence: specifies 5,500 THB/night for Southeast Asia and 8,000 THB/night elsewhere.
+- `ans_annual_leave_days` (5/5) — Directly answers the question: states 15 days per year and notes increase to 20 days after five years, matching the provided evidence and including accrual rate.
+- `ans_remote_days` (5/5) — Directly states 'up to 3 days per week' and includes relevant policy conditions (manager approval, FlexWork submission deadline, Teams availability, VPN requirement, and new-hire on-site period).
+- `ans_paysiam_fees` (5/5) — Directly lists the transaction fees (1.85% domestic card/PromptPay QR; 2.95% international) matching the provided evidence; extra details about no setup fee/monthly minimum and T+2 settlement are accurate and relevant.
+- `ans_p1_first_response` (5/5) — Directly answers the question with both Platinum (15 minutes) and Standard (1 hour) targets, matching the provided evidence.
+- `ans_insurance_medical` (5/5) — Directly answers the query by stating the emergency medical coverage limit (3,000,000 THB), notes emergency evacuation coverage, and includes the claim procedure as given in the evidence.
+- `ans_expense_deadline` (5/5) — Directly states the deadline (within 45 days of the expense date) and how to submit (through ExpenseFlow with scanned receipts), matching the provided evidence.
+- `ans_multi_intent_allowance_p1` (5/5) — Directly answers both questions: states the daily allowance (2,400 THB; 1,200 THB on departure/return) and the P1 first-response targets for Platinum (15 minutes) and Standard (1 hour), matching the provided evidence.
+- `ans_nf_ceo_salary` (5/5) — Evidence is empty; the candidate directly and correctly states that the information could not be found in the knowledge base, appropriately answering the query.
+- `ans_nf_parental_leave` (5/5) — The evidence only contains annual leave details and does not mention parental leave; the candidate correctly states the information is not found in the knowledge base.
+- `ans_nf_office_wifi` (5/5) — Correctly states that the knowledge base contains no information about the office Wi‑Fi password, so the query cannot be answered from the provided evidence.
+- `ans_th_travel_approval_system` (5/5) — Directly answers the question: correctly identifies TravelHub under "Overseas Trip Request". Also provides relevant additional approval details (department head 14 days prior; >10 business days needs Managing Director) from the evidence.
+- `ans_th_daily_allowance` (5/5) — Directly and completely answers the question using the evidence: full day 2,400 THB, departure/return days half = 1,200 THB.
+- `ans_th_paysiam_international_fee` (5/5) — Directly answers the query with the stated international card fee (2.95% per successful transaction) and correctly notes no setup fee or monthly minimum, matching the provided evidence.
+- `ans_th_nf_maternity_leave` (5/5) — Evidence only covers annual leave (15 days) and contains no maternity leave information; the candidate correctly stated the information could not be found.
+
+### Rejected faithfulness claims
+
+None.
+
+Every case passed every deterministic axis.

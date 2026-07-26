@@ -238,10 +238,11 @@ layers harden grounding in code: snippets are passed inside an
 `<evidence>` block the prompt declares to be data (knowledge-base text is
 untrusted), and every `[Section Title]` citation in a real answer is
 validated against the handed-off snippets — an invented citation raises
-`ReportGenerationError`. Beyond citations, per-claim verification remains
-probabilistic: the live answer eval measures required facts, unsupported
-numbers, and forbidden facts per run, but no per-sentence semantic check
-exists.
+`ReportGenerationError`. Beyond citations, the live answer eval measures
+required facts, unsupported numbers, and forbidden facts deterministically,
+then uses an evaluation-only structured judge for claim-level faithfulness and
+answer relevance. Those judged axes remain probabilistic soft metrics and
+never enter the runtime graph.
 
 LangChain responses may contain a plain string or structured content blocks.
 The Generator reads the framework's normalized text accessor, trims the result,
@@ -284,7 +285,7 @@ output by default.
 
 Using Python 3.11.15 in the repository's clean virtual environment:
 
-- all 137 offline unit tests pass (5 live tests skipped by default);
+- all 147 offline unit tests pass (5 live tests skipped by default);
 - the knowledge base loads as exactly 10 ordered sections;
 - retrieval results are deterministic for repeated queries, and the parse
   cache invalidates on file change in default lexical mode;
@@ -309,6 +310,9 @@ Using Python 3.11.15 in the repository's clean virtual environment:
 - string and structured model text are normalized;
 - the streamed CLI answer ends byte-equal with the state report;
 - interactive execution recovers after a query failure;
+- structured judge outputs are schema-bound, validated again in code, retried
+  only for bounded parse/validation failures, and isolate provider errors per
+  axis without recording raw provider payloads;
 - bytecode compilation succeeds; and
 - installed dependencies pass `pip check`.
 
@@ -317,8 +321,26 @@ access. Retrieval quality itself is measured by
 `src/evaluation/run_retrieval_eval.py` over a calibration and a held-out set
 (`evaluation_results.md`), and answer quality by the opt-in
 `run_answer_eval.py` (`answer_eval_results.md`) — those reports, not this
-test list, carry the quality numbers. There is still no claim for latency
-SLO or cost per query over real user traffic.
+test list, carry the quality numbers. The judge sees only the query, handed-off
+snippets, and final answer; it uses one model and one run, so its scores are
+reported rather than release-gated. There is still no claim for latency SLO
+or cost per query over real user traffic.
+
+## LLM-as-judge evaluation boundary
+
+Faithfulness and relevance require semantic comparison that the deterministic
+citation, fact, and number checks cannot fully express. The judge therefore
+lives under `src/evaluation/`, sees only `(query, snippets, answer)`, and never
+becomes a third graph node or a runtime guard.
+
+The two axes use separate strict JSON Schemas so one malformed or failed
+verdict cannot contaminate the other. Structured runnables are bound once and
+reused across cases; inputs and outputs are bounded and validated again in
+code. Parse failures receive one bounded retry, while provider errors rely on
+the SDK retry policy and are recorded only as safe `judge_error` types.
+Faithfulness ≥ 0.9 and relevance ≥ 4.0 are investigation thresholds, not CI
+gates, because a single model and one run do not provide human-calibrated
+ground truth.
 
 ## Security and operational boundary
 
